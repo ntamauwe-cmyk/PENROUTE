@@ -1,0 +1,32 @@
+# --- Secrets / environment (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- Dependencies & build output ---
+node_modules
+dist
+build
+.vite
+
+# --- Convex generated code (regenerated with `bun convex dev`) ---
+src/convex/_generated
+src/lib/github-manifest.generated.ts
+.convex
+
+# --- Logs & OS noise ---
+*.log
+.DS_Store
+Thumbs.db
+
+# --- Editor / tooling ---
+.idea
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.turbo
+coverage
+
+# --- Temp ---
+*.tmp
+*.bak

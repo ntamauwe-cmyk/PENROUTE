@@ -1,0 +1,431 @@
+/* DO NOT CHANGE */
+@import "tailwindcss";
+@import "tw-animate-css";
+@custom-variant dark (&:is(.dark *));
+
+/* Montserrat — the Penroute brand typeface (headings, body, figures) */
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap");
+
+/* DO NOT CHANGE */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* =============================================================
+   PENROUTE DESIGN TOKENS — locked palette (master brand ref)
+   Primary Green #007A4D · Accent Green #00C896 · Navy #0B1F2A
+   Light Grey #E5E7EB · Trust Gold #D4AF37 · White #FFFFFF
+   ============================================================= */
+:root {
+  --pen-green: #007a4d;
+  --pen-green-hover: #006a43;
+  --pen-accent: #00c896;
+  --pen-navy: #0b1f2a;
+  --pen-navy-2: #0f2836;
+  --pen-navy-3: #143142;
+  --pen-gold: #d4af37;
+  --pen-grey: #e5e7eb;
+
+  --radius: 0.875rem;
+
+  --background: #f6f8f8;
+  --foreground: #10222e;
+  --card: #ffffff;
+  --card-foreground: #10222e;
+  --popover: #ffffff;
+  --popover-foreground: #10222e;
+  --primary: #007a4d;
+  --primary-foreground: #ffffff;
+  --secondary: #eef3f2;
+  --secondary-foreground: #0b1f2a;
+  --muted: #eef1f3;
+  --muted-foreground: #5a6b74;
+  --accent: #e6f6ef;
+  --accent-foreground: #046b43;
+  --destructive: #c4453c;
+  --border: #e5e9ec;
+  --input: #eef1f3;
+  --ring: #007a4d;
+  --chart-1: #007a4d;
+  --chart-2: #00c896;
+  --chart-3: #d4af37;
+  --chart-4: #0b1f2a;
+  --chart-5: #5a6b74;
+  --sidebar: #0b1f2a;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #00c896;
+  --sidebar-primary-foreground: #062018;
+  --sidebar-accent: #16323f;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1c3b4a;
+  --sidebar-ring: #00c896;
+}
+
+.dark {
+  --background: #081720;
+  --foreground: #e8eef1;
+  --card: #0f2836;
+  --card-foreground: #e8eef1;
+  --popover: #0f2836;
+  --popover-foreground: #e8eef1;
+  --primary: #00c896;
+  --primary-foreground: #062018;
+  --secondary: #16323f;
+  --secondary-foreground: #e8eef1;
+  --muted: #16323f;
+  --muted-foreground: #9db2bc;
+  --accent: #16323f;
+  --accent-foreground: #7fe6c4;
+  --destructive: #e06860;
+  --border: #1c3b4a;
+  --input: #16323f;
+  --ring: #00c896;
+  --chart-1: #00c896;
+  --chart-2: #d4af37;
+  --chart-3: #007a4d;
+  --chart-4: #e8eef1;
+  --chart-5: #9db2bc;
+  --sidebar: #081720;
+  --sidebar-foreground: #e8eef1;
+  --sidebar-primary: #00c896;
+  --sidebar-primary-foreground: #062018;
+  --sidebar-accent: #16323f;
+  --sidebar-accent-foreground: #e8eef1;
+  --sidebar-border: #1c3b4a;
+  --sidebar-ring: #00c896;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight;
+  }
+  button:not([disabled]),
+  [role="button"]:not([disabled]) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: #00c89633;
+  }
+  /* Visible, professional focus states (accessibility, §46) */
+  :focus-visible {
+    outline: 2px solid var(--pen-accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* ---------- Penroute primitives ---------- */
+
+  /* Premium white surface card — the reference image card style:
+     white, subtle border, restrained shadow, moderate radius */
+  .pen-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow:
+      0 1px 2px rgb(11 31 42 / 0.04),
+      0 8px 24px -12px rgb(11 31 42 / 0.1);
+  }
+  .pen-card-lg {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 0.25rem);
+    box-shadow:
+      0 1px 2px rgb(11 31 42 / 0.04),
+      0 16px 40px -16px rgb(11 31 42 / 0.12);
+  }
+  .pen-tile {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgb(11 31 42 / 0.03);
+  }
+  .pen-inset {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) - 0.25rem);
+  }
+
+  /* Dark navy brand panel with the signature flowing route lines */
+  .pen-navy {
+    position: relative;
+    background:
+      radial-gradient(1100px 480px at 85% -10%, rgb(0 200 150 / 0.12), transparent 55%),
+      radial-gradient(900px 420px at -15% 110%, rgb(0 122 77 / 0.28), transparent 60%),
+      linear-gradient(150deg, #0d2530 0%, #0b1f2a 55%, #0a1c26 100%);
+    color: #ffffff;
+  }
+  .pen-navy::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(115deg, transparent 42%, rgb(0 200 150 / 0.05) 47%, transparent 53%),
+      linear-gradient(115deg, transparent 55%, rgb(212 175 55 / 0.04) 60%, transparent 66%);
+  }
+
+  /* Gold underline accent — reference hero treatment */
+  .pen-gold-rule {
+    display: block;
+    width: 64px;
+    height: 3px;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--pen-gold), #b8962e);
+  }
+
+  /* shadcn overrides → Penroute skin */
+  [data-slot="card"] {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow:
+      0 1px 2px rgb(11 31 42 / 0.04),
+      0 8px 24px -12px rgb(11 31 42 / 0.1);
+  }
+  [data-slot="button"] {
+    border-radius: calc(var(--radius) - 0.375rem);
+    font-weight: 600;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease,
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.1s ease;
+  }
+  [data-slot="button"]:active:not([disabled]) {
+    transform: translateY(1px);
+  }
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"] {
+    border-radius: calc(var(--radius) - 0.375rem);
+    background: #ffffff;
+    border: 1px solid var(--border);
+    box-shadow: none;
+    font-weight: 500;
+  }
+  .dark [data-slot="input"],
+  .dark [data-slot="textarea"],
+  .dark [data-slot="select-trigger"] {
+    background: var(--secondary);
+  }
+  [data-slot="input"]:focus,
+  [data-slot="textarea"]:focus,
+  [data-slot="select-trigger"]:focus {
+    border-color: var(--pen-accent);
+  }
+  [data-slot="badge"] {
+    border-radius: 9999px;
+    font-weight: 600;
+  }
+  [data-slot="table"] {
+    border-radius: calc(var(--radius) - 0.25rem);
+  }
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="sheet-content"] {
+    border-radius: calc(var(--radius) + 0.25rem);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 1px 2px rgb(11 31 42 / 0.06),
+      0 24px 60px -24px rgb(11 31 42 / 0.28);
+  }
+  [data-slot="progress-indicator"] {
+    background: var(--primary);
+  }
+  [data-slot="progress-track"] {
+    background: var(--muted);
+  }
+
+  /* ---------- Status pills — accessible, not colour alone (dot + text) ---------- */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .pill-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 9999px;
+    flex-shrink: 0;
+  }
+  .st-green {
+    background: #e6f6ef;
+    color: #04593a;
+    border-color: #bce6d4;
+  }
+  .st-green .pill-dot { background: #007a4d; }
+  .st-blue {
+    background: #e8f2f8;
+    color: #0d4a66;
+    border-color: #c3dfee;
+  }
+  .st-blue .pill-dot { background: #2276a8; }
+  .st-violet {
+    background: #eef0fa;
+    color: #3b3f73;
+    border-color: #d4d8f0;
+  }
+  .st-violet .pill-dot { background: #5b60a8; }
+  .st-amber {
+    background: #fbf3e0;
+    color: #7a5a10;
+    border-color: #efdca8;
+  }
+  .st-amber .pill-dot { background: #d4af37; }
+  .st-red {
+    background: #fbeae8;
+    color: #8a2f28;
+    border-color: #f0cbc7;
+  }
+  .st-red .pill-dot { background: #c4453c; }
+  .st-slate {
+    background: #eef1f3;
+    color: #4b5c66;
+    border-color: #dde3e7;
+  }
+  .st-slate .pill-dot { background: #8299a5; }
+  .pulse-dot {
+    animation: pen-pulse 1.6s ease-in-out infinite;
+  }
+
+  /* Elegant dark-navy sidebar link */
+  .pen-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: calc(var(--radius) - 0.375rem);
+    padding: 0.75rem 0.875rem;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: #e3edf2;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .pen-nav-link:hover {
+    background: rgb(255 255 255 / 0.06);
+    color: #ffffff;
+  }
+  .pen-nav-link[data-active="true"] {
+    background: linear-gradient(90deg, rgb(0 200 150 / 0.16), rgb(0 200 150 / 0.05));
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .pen-nav-link[data-active="true"] .pen-nav-icon {
+    color: #00c896;
+  }
+  .pen-nav-icon {
+    color: #a8bcc7;
+    flex-shrink: 0;
+  }
+  .pen-nav-link:hover .pen-nav-icon {
+    color: #d7e3e9;
+  }
+
+  /* Faint grid/flow texture for navy marketing sections */
+  .pen-flow {
+    background-image:
+      linear-gradient(115deg, transparent 46%, rgb(0 200 150 / 0.06) 50%, transparent 54%),
+      linear-gradient(115deg, transparent 60%, rgb(212 175 55 / 0.045) 64%, transparent 69%);
+  }
+}
+
+@keyframes pen-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+/* ---------- Print: Penroute receipt (audit document) ---------- */
+@media print {
+  body {
+    background: white !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0 !important;
+    background: white !important;
+  }
+  .print-area .pen-card,
+  .print-area .pen-card-lg,
+  .print-area .pen-tile,
+  .print-area .pen-inset,
+  .print-area [data-slot="card"] {
+    box-shadow: none !important;
+    border: 1px solid #d8dee2 !important;
+    background: white !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

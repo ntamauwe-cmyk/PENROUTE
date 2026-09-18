@@ -1,0 +1,23 @@
+{
+  "name": "Penroute — Pension Payments. Simplified.",
+  "short_name": "Penroute",
+  "description": "Penroute is Nigeria's trusted pension payment platform for employers, employees and Pension Fund Administrators.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1F2A",
+  "theme_color": "#0B1F2A",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

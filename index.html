@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- COEP opt-in: lets this document embed in the COEP-gated editor preview
+       iframe (Firefox NS_ERROR_DOM_COEP_FAILED) even if response headers are
+       stripped by a proxy. Same-origin assets and CORS-mode Convex fetches are
+       unaffected. -->
+  <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp" />
+  <title>Penroute — Pension Payments. Simplified.</title>
+</head>
+
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>
