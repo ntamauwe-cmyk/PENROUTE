@@ -27,7 +27,7 @@ export default function Transactions() {
           emptyMessage="No transactions yet — payments appear here after your first contribution."
         >
           {payments.map((p: any) => (
-            <tr key={p._id} className="border-t border-border/50">
+            <tr key={p._id} className="pen-table-row">
               <td className="px-3 py-2.5">
                 <p className="font-mono text-xs font-semibold">{p.paymentRef}</p>
                 {p.providerRef && (
