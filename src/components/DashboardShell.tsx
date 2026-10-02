@@ -72,7 +72,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             <Logo onDark tagline />
           </Link>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">{navLinks()}</nav>
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3"><div className="pen-sidebar-label">Workspace</div>{navLinks().slice(0, 7)}<div className="pen-brand-divider" /><div className="pen-sidebar-label">Control</div>{navLinks().slice(7)}</nav>
         <div className="border-t border-white/10 p-4">
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-bold text-white">
@@ -136,7 +136,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* ===== Content ===== */}
       <div className="lg:pl-64">
-        <main className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-28 pt-6 sm:px-6 lg:pb-16">
+        <main className="mx-auto w-full max-w-7xl space-y-7 px-4 pb-28 pt-6 sm:px-6 lg:pb-16 lg:pt-8">
           {children}
         </main>
       </div>
