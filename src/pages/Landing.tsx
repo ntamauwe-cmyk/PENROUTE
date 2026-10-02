@@ -310,7 +310,7 @@ export default function Landing() {
               key={t.title}
               {...fade}
               transition={{ duration: 0.45, delay: i * 0.07 }}
-              className="pen-card p-6 shadow-[0_10px_35px_-22px_rgb(11_31_42_/_0.22)]
+              className="pen-card p-6 shadow-[0_10px_35px_-22px_rgb(11_31_42_/_0.22)]"
             >
               <span className="flex size-12 items-center justify-center rounded-xl bg-[#E6F6EF]">
                 <t.icon className="size-6 text-[#007A4D]" />
