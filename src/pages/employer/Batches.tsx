@@ -54,7 +54,7 @@ export default function Batches() {
           emptyMessage=""
         >
           {sorted.map((b: any) => (
-            <tr key={b._id} className="border-t border-border/50">
+            <tr key={b._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-mono text-xs font-medium">{b.batchRef}</td>
               <td className="px-3 py-2.5 font-medium">
                 {monthName(b.contributionMonth)} {b.contributionYear}
