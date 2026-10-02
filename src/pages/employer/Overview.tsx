@@ -141,7 +141,7 @@ export default function Overview() {
 
       {/* ===== THE SCREEN: real-time pension payment status ===== */}
       {latest ? (
-        <section className="pen-card-lg pen-navy overflow-hidden p-5 sm:p-7">
+        <section className="pen-card-lg p-5 sm:p-7">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#5A6B74]">
