@@ -241,7 +241,7 @@ export default function Employees() {
           }
         >
           {filtered.map((e: any) => (
-            <tr key={e._id} className="border-t border-border/50">
+            <tr key={e._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-medium">{e.fullName}</td>
               <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{e.employeeCode}</td>
               <td className="px-3 py-2.5 tabular-nums">{e.pensionPin}</td>
