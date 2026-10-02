@@ -114,12 +114,13 @@ export default function Overview() {
   return (
     <DashboardShell>
       {/* ===== Header ===== */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="pen-page-header">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#0B1F2A] sm:text-3xl">
+          <p className="pen-eyebrow">Employer workspace</p>
+          <h1 className="pen-page-title">
             {greeting}, {firstName}
           </h1>
-          <p className="mt-0.5 text-sm text-[#5A6B74]">Here's your pension payment overview.</p>
+          <p className="pen-page-description">Here's your pension payment overview.</p>
         </div>
         <div className="flex flex-wrap gap-2 no-print">
           <Button
@@ -140,7 +141,7 @@ export default function Overview() {
 
       {/* ===== THE SCREEN: real-time pension payment status ===== */}
       {latest ? (
-        <section className="pen-card-lg p-5 sm:p-7">
+        <section className="pen-card-lg pen-navy overflow-hidden p-5 sm:p-7">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#5A6B74]">
