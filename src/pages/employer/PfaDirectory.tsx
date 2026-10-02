@@ -112,7 +112,7 @@ export default function PfaDirectory() {
           {pfas.map((p: any) => {
             const n = perPfaCounts.get(p.code) ?? 0;
             return (
-              <tr key={p._id} className="border-t border-border/50">
+              <tr key={p._id} className="pen-table-row">
                 <td className="px-3 py-2.5">
                   <span className="inline-flex items-center gap-2 font-medium">
                     {n > 0 ? (
