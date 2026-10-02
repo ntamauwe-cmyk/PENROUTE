@@ -139,7 +139,7 @@ export default function Statements() {
           emptyMessage="No contributions match the selected filters."
         >
           {filtered.map((b: any) => (
-            <tr key={b._id} className="border-t border-border/50">
+            <tr key={b._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-medium">
                 {monthName(b.contributionMonth)} {b.contributionYear}
               </td>
