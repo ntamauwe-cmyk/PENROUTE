@@ -19,6 +19,10 @@ src/lib/github-manifest.generated.ts
 .DS_Store
 Thumbs.db
 
+# --- Playwright test artifacts ---
+test-results
+playwright-report
+
 # --- Editor / tooling ---
 .idea
 .vscode/*

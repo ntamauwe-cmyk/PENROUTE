@@ -26,6 +26,8 @@ const EXCLUDED_DIRS = new Set([
   ".convex",
   ".turbo",
   "coverage",
+  "test-results",
+  "playwright-report",
   ".idea",
   ".vscode",
   "__pycache__",

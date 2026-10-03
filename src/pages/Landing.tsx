@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useNavigate } from "react-router";
+import { greetingNow } from "@/lib/pension";
 
 const fade = {
   initial: { opacity: 0, y: 24 },
@@ -124,7 +125,7 @@ export default function Landing() {
             <div className="rounded-2xl border border-white/10 bg-white p-5 shadow-[0_40px_120px_-30px_rgba(0,0,0,0.6)] sm:p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-[#0B1F2A]">Good morning, Employer</p>
+                  <p className="text-sm font-bold text-[#0B1F2A]">{greetingNow()}, Employer</p>
                   <p className="text-xs text-[#5A6B74]">Here's your pension payment overview.</p>
                 </div>
                 <PenrouteSymbol className="size-7" />

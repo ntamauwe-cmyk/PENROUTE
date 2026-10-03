@@ -29,6 +29,7 @@ import {
   cycleStageIndex,
   fmtDate,
   fmtNaira,
+  greetingNow,
   monthName,
 } from "@/lib/pension";
 
@@ -107,8 +108,7 @@ export default function Overview() {
 
   const stageIdx = latest ? cycleStageIndex(latest) : -1;
   const firstName = employer?.name?.split(" ")[0] ?? "Employer";
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = greetingNow();
 
   return (
     <DashboardShell>

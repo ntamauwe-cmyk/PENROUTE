@@ -132,3 +132,12 @@ export function verificationCode(...parts: (string | number | undefined)[]): str
   }
   return `VRF-${h1.toString(16).toUpperCase().padStart(8, "0")}-${h2.toString(16).toUpperCase().padStart(8, "0")}`;
 }
+
+/** Time-of-day greeting from the viewer's local clock.
+ *  00–04 → evening, 05–11 → morning, 12–16 → afternoon, 17–23 → evening. */
+export function greetingNow(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  return "Good evening";
+}
