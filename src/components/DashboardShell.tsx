@@ -45,7 +45,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     item.end ? location.pathname === item.to : location.pathname.startsWith(item.to);
 
   const navLinks = (onClick?: () => void) =>
-    NAV.map((item) => {
+    NAV.filter((item) => item.to !== "/admin" || user?.role === "admin").map((item) => {
       const Icon = item.icon;
       return (
         <Link

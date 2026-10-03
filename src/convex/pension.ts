@@ -140,7 +140,14 @@ export const getBatchDetail = query({
     const settlementsEnriched = await Promise.all(
       settlements.map(async (s) => {
         const pfa = await ctx.db.get(s.pfaId);
-        return { ...s, pfaName: pfa?.name ?? "Unknown PFA", pfaCode: pfa?.code ?? "?" };
+        return {
+          ...s,
+          pfaName: pfa?.name ?? "Unknown PFA",
+          pfaCode: pfa?.code ?? "?",
+          // Integration mode of the destination PFA — lets the UI/printouts
+          // distinguish simulated sandbox acknowledgements from live confirmations.
+          pfaMode: pfa?.integrationMode,
+        };
       }),
     );
 

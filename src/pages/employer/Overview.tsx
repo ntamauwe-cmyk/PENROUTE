@@ -465,6 +465,13 @@ function PfaSubmissionSummary({
           {settlements.reduce((s: number, x: any) => s + x.employeeCount, 0)} employees routed
         </span>
       </div>
+      {settlements.length > 0 && (
+        <p className="mb-3 rounded border border-[#D4AF37]/30 bg-[#F5EFD9] px-3 py-2 text-xs font-semibold leading-relaxed text-[#7A6412]">
+          {settlements.every((s: any) => s.pfaMode === "live_api")
+            ? "Live PFA integration — statuses reflect external PFA confirmations."
+            : "Sandbox mode — settlement and PFA acknowledgement statuses below are simulated test results, not externally confirmed settlements."}
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {settlements.map((s: any) => {
           const ack = ackBySettlement.get(s._id);

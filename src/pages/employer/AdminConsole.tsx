@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,8 +24,35 @@ import { toast } from "sonner";
  * PLATFORM ADMIN CONSOLE (spec §22, §23) — includes the plug-and-play rail
  * switch: flip collection between the sandbox rail and the live Paystack rail
  * once PAYSTACK_SECRET_KEY is configured in the Keys tab.
+ *
+ * Route guard: the console's queries are admin-only and THROW for non-admins,
+ * so the role check runs BEFORE mounting the body — a friendly access screen
+ * instead of a root-boundary crash (which would also expose a stack trace).
  */
 export default function AdminConsole() {
+  const { user } = useAuth();
+
+  if (user === undefined) {
+    return (
+      <DashboardShell>
+        <LoadingBlock label="Verifying access…" />
+      </DashboardShell>
+    );
+  }
+  if (!user || user.role !== "admin") {
+    return (
+      <DashboardShell>
+        <PageHeader title="Admin console" />
+        <div className="pen-card p-8 text-center text-sm text-muted-foreground">
+          Administrator access is required to use the admin console.
+        </div>
+      </DashboardShell>
+    );
+  }
+  return <AdminConsoleBody />;
+}
+
+function AdminConsoleBody() {
   const overview = useQuery(api.admin.getAdminOverview);
   const employers = useQuery(api.admin.listAllEmployers);
   const exceptions = useQuery(api.admin.listAllExceptions);

@@ -23,7 +23,7 @@ interface CertificateProps {
   batch: Doc<"contributionBatches">;
   employer: Doc<"employers"> | null;
   records: Doc<"contributionRecords">[];
-  settlements: (Doc<"settlements"> & { pfaName?: string; pfaCode?: string })[];
+  settlements: (Doc<"settlements"> & { pfaName?: string; pfaCode?: string; pfaMode?: string })[];
 }
 
 const toneDot: Record<string, string> = {
@@ -77,6 +77,13 @@ export function PaymentReceipt({ batch, employer, records, settlements }: Certif
       ["Settlement Status", statusLabel(batch.settlementStatus)],
       ["PFA Acknowledgement", statusLabel(batch.pfaStatus)],
       ["Reconciliation Status", statusLabel(batch.reconciliationStatus)],
+      [],
+      [
+        "Settlement Rail",
+        settlements.length > 0 && settlements.every((s) => s.pfaMode === "live_api")
+          ? "Live PFA API (external confirmations)"
+          : "Sandbox (simulated test results)",
+      ],
     ]);
   };
 
@@ -176,6 +183,14 @@ export function PaymentReceipt({ batch, employer, records, settlements }: Certif
             </div>
           ))}
         </div>
+
+        {settlements.length > 0 && (
+          <p className="mt-3 rounded border border-[#D4AF37]/30 bg-[#F5EFD9] px-3 py-2 text-[11px] font-semibold leading-relaxed text-[#7A6412]">
+            {settlements.every((s) => s.pfaMode === "live_api")
+              ? "Settlement rail: live PFA integration — statuses reflect external PFA confirmations."
+              : "Settlement rail: sandbox — settlement and PFA acknowledgement statuses above are simulated test results, not externally confirmed settlements."}
+          </p>
+        )}
 
         {/* PFA breakdown */}
         <Separator className="my-5" />
