@@ -34,17 +34,7 @@ function RouteLoading() {
   return (
     <div className="flex min-h-screen items-center justify-center">
       <div className="flex flex-col items-center gap-3">
-        <svg viewBox="0 0 96 96" fill="none" className="size-10" aria-hidden="true">
-          <defs>
-            <linearGradient id="pen-load-grad" x1="20" y1="82" x2="72" y2="12" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="#0C9A62" />
-              <stop offset="1" stopColor="#00E0A0" />
-            </linearGradient>
-          </defs>
-          <path d="M34 26 L34 56 L21 72" stroke="url(#pen-load-grad)" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M34 26 C44 14, 68 16, 72 32 C76 48, 60 58, 46 53" stroke="url(#pen-load-grad)" strokeWidth="13" strokeLinecap="round" />
-          <path d="M30 64 L47 33" stroke="#5FCE9E" strokeWidth="9" strokeLinecap="round" opacity="0.55" />
-        </svg>
+        <img src="/brand/penroute-mark-traced.svg" className="size-10" alt="" aria-hidden="true" />
         <div className="animate-pulse text-sm font-semibold text-muted-foreground">Loading…</div>
       </div>
     </div>
