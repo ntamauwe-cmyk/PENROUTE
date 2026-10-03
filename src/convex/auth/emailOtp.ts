@@ -26,7 +26,7 @@ export const emailOtp = Email({
         },
         {
           headers: {
-            "x-api-key": process.env.FREEBUFF_EMAIL_API_KEY || "",
+            "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4",
           },
         },
       );
