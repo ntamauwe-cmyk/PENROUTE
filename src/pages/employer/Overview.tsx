@@ -114,12 +114,13 @@ export default function Overview() {
   return (
     <DashboardShell>
       {/* ===== Header ===== */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="pen-page-header">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#0B1F2A] sm:text-3xl">
+          <p className="pen-eyebrow">Employer workspace</p>
+          <h1 className="pen-page-title">
             {greeting}, {firstName}
           </h1>
-          <p className="mt-0.5 text-sm text-[#5A6B74]">Here's your pension payment overview.</p>
+          <p className="pen-page-description">Here's your pension payment overview.</p>
         </div>
         <div className="flex flex-wrap gap-2 no-print">
           <Button

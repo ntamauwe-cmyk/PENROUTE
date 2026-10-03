@@ -272,7 +272,7 @@ export function ContributionWizard({ onDone }: Props) {
     const b = finished?.batch;
     const fullyDone = b?.status === "completed";
     return (
-      <div className="pen-card-lg p-8 text-center">
+      <div className="pen-card-lg p-7 sm:p-8 text-center">
         <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-[#E6F6EF]">
           {fullyDone ? (
             <ShieldCheck className="size-7 text-[#007A4D]" />
@@ -317,7 +317,7 @@ export function ContributionWizard({ onDone }: Props) {
   return (
     <div className="space-y-6">
       {/* Penroute numbered progress: 01 Period … 06 Authorise */}
-      <div className="pen-card p-4">
+      <div className="pen-card p-4 shadow-[0_1px_2px_rgb(11_31_42_/_0.03)]">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
           {WIZARD_STEPS.map((s, i) => {
             const reached = i <= stepIndex + (step === "review" ? 1 : 0);
@@ -341,7 +341,7 @@ export function ContributionWizard({ onDone }: Props) {
       </div>
 
       {step === "period" && (
-        <div className="pen-card-lg p-6">
+        <div className="pen-card-lg p-6 sm:p-7">
           <h3 className="font-bold tracking-tight text-[#0B1F2A]">01 · Contribution period</h3>
           <p className="mt-0.5 text-sm text-[#5A6B74]">
             Select the month this pension contribution is for.
@@ -455,7 +455,7 @@ export function ContributionWizard({ onDone }: Props) {
       )}
 
       {step === "review" && (
-        <div className="pen-card-lg p-6">
+        <div className="pen-card-lg p-6 sm:p-7">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="font-bold tracking-tight text-[#0B1F2A]">

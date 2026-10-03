@@ -20,7 +20,7 @@ const NAV: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
   { to: "/dashboard/employees", label: "Employees", icon: Users },
   { to: "/dashboard/batches", label: "Pension Payments", icon: Landmark },
   { to: "/dashboard/transactions", label: "Transactions", icon: ScrollText },
-  { to: "/dashboard/pfas", label: "PFAs", icon: Landmark },
+  { to: "/dashboard/pfas", label: "PFA Directory", icon: Landmark },
   { to: "/dashboard/reconciliation", label: "Reconciliation", icon: ShieldCheck },
   { to: "/dashboard/statements", label: "Reports", icon: LineChart },
   { to: "/dashboard/audit", label: "Audit Logs", icon: ScrollText },
@@ -66,13 +66,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       {/* ===== Desktop navy sidebar (reference dashboard) ===== */}
-      <aside className="pen-nav fixed inset-y-0 left-0 z-40 hidden w-64 flex-col lg:flex no-print">
+      <aside className="pen-nav pen-sidebar-nav fixed inset-y-0 left-0 z-40 hidden w-64 flex-col lg:flex no-print">
         <div className="px-5 pb-5 pt-7">
           <Link to="/dashboard" aria-label="Penroute" className="inline-block">
             <Logo onDark tagline />
           </Link>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">{navLinks()}</nav>
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3"><div className="pen-sidebar-label">Workspace</div>{navLinks().slice(0, 7)}<div className="pen-brand-divider" /><div className="pen-sidebar-label">Control</div>{navLinks().slice(7)}</nav>
         <div className="border-t border-white/10 p-4">
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-bold text-white">
@@ -97,7 +97,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ===== Mobile top bar — symbol-only mark at narrow widths ===== */}
-      <header className="pen-nav sticky top-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden no-print">
+      <header className="pen-nav pen-sidebar-nav sticky top-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden no-print">
         <Link to="/dashboard" aria-label="Penroute" className="flex items-center">
           <PenrouteSymbol className="size-8" />
         </Link>
@@ -117,7 +117,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             onClick={() => setMobileOpen(false)}
             aria-hidden
           />
-          <nav className="pen-nav pen-flow absolute left-3 right-3 top-16 flex flex-col gap-1 p-3 shadow-2xl">
+          <nav className="pen-nav pen-flow pen-sidebar-nav absolute left-3 right-3 top-16 flex flex-col gap-1 p-3 shadow-2xl">
             {navLinks(() => setMobileOpen(false))}
             <Button
               variant="ghost"
@@ -136,7 +136,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* ===== Content ===== */}
       <div className="lg:pl-64">
-        <main className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-28 pt-6 sm:px-6 lg:pb-16">
+        <main className="mx-auto w-full max-w-7xl space-y-7 px-4 pb-28 pt-6 sm:px-6 lg:pb-16 lg:pt-8">
           {children}
         </main>
       </div>

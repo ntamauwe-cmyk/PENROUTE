@@ -49,7 +49,7 @@ export default function AuditTrail() {
           emptyMessage="No audit entries yet."
         >
           {filtered.map((l: any) => (
-            <tr key={l._id} className="border-t border-border/50">
+            <tr key={l._id} className="pen-table-row">
               <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">
                 {fmtDateTime(l.createdAt)}
               </td>

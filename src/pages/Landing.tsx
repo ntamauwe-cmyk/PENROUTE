@@ -231,7 +231,7 @@ export default function Landing() {
                 key={f.t}
                 {...fade}
                 transition={{ duration: 0.4, delay: i * 0.05 }}
-                className="pen-card p-5"
+                className="pen-card p-5 shadow-[0_10px_35px_-22px_rgb(11_31_42_/_0.22)]"
               >
                 <span className="flex size-10 items-center justify-center rounded-lg bg-[#E6F6EF]">
                   <f.icon className="size-5 text-[#007A4D]" />
@@ -310,7 +310,7 @@ export default function Landing() {
               key={t.title}
               {...fade}
               transition={{ duration: 0.45, delay: i * 0.07 }}
-              className="pen-card p-6"
+              className="pen-card p-6 shadow-[0_10px_35px_-22px_rgb(11_31_42_/_0.22)]"
             >
               <span className="flex size-12 items-center justify-center rounded-xl bg-[#E6F6EF]">
                 <t.icon className="size-6 text-[#007A4D]" />
@@ -333,7 +333,7 @@ export default function Landing() {
                 key={s.n}
                 {...fade}
                 transition={{ duration: 0.45, delay: i * 0.06 }}
-                className="pen-tile p-5"
+                className="pen-tile p-5 transition-transform duration-200 hover:-translate-y-0.5"
               >
                 <p className="text-2xl font-bold text-[#007A4D]">{s.n}</p>
                 <p className="mt-2 text-sm font-bold text-[#0B1F2A]">{s.title}</p>

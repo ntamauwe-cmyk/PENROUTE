@@ -22,6 +22,7 @@ import type * as payments from "../payments.js";
 import type * as payrollApi from "../payrollApi.js";
 import type * as paystackWebhook from "../paystackWebhook.js";
 import type * as pension from "../pension.js";
+import type * as pfaDirectory from "../pfaDirectory.js";
 import type * as pfaDispatch from "../pfaDispatch.js";
 import type * as pfaDispatchData from "../pfaDispatchData.js";
 import type * as users from "../users.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   payrollApi: typeof payrollApi;
   paystackWebhook: typeof paystackWebhook;
   pension: typeof pension;
+  pfaDirectory: typeof pfaDirectory;
   pfaDispatch: typeof pfaDispatch;
   pfaDispatchData: typeof pfaDispatchData;
   users: typeof users;

@@ -60,7 +60,7 @@ export default function Reconciliation() {
           emptyMessage="No batches to reconcile yet."
         >
           {batches.map((b: any) => (
-            <tr key={b._id} className="border-t border-border/50">
+            <tr key={b._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-mono text-xs font-medium">{b.batchRef}</td>
               <td className="px-3 py-2.5">{b.contributionMonth}/{b.contributionYear}</td>
               <td className="px-3 py-2.5 text-right tabular-nums">{fmtNaira(b.totalPensionAmount)}</td>
@@ -90,7 +90,7 @@ export default function Reconciliation() {
             emptyMessage="No exceptions — every naira reconciles. 🎉"
           >
             {[...open, ...resolved].map((e: any) => (
-              <tr key={e._id} className="border-t border-border/50">
+              <tr key={e._id} className="pen-table-row">
                 <td className="px-3 py-2.5 font-mono text-xs">{e.exceptionRef}</td>
                 <td className="px-3 py-2.5">
                   <Badge variant="outline">{e.type.replace(/_/g, " ")}</Badge>

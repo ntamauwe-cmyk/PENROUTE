@@ -39,6 +39,9 @@ export async function audit(
     employerId?: Id<"employers">;
     batchId?: Id<"contributionBatches">;
     details?: string;
+    field?: string;
+    before?: string;
+    after?: string;
   },
 ) {
   await ctx.db.insert("auditLogs", { ...entry, createdAt: Date.now() });

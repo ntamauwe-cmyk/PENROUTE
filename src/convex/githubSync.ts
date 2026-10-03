@@ -9,6 +9,11 @@
  * preserved (nothing is deleted). Single commit, message:
  *   "Initial Penroute application commit"
  *
+ * Empty-repository handling: GitHub's Git Data API refuses blob creation on a
+ * repo with zero commits (409). This action seeds the first commit through the
+ * Contents API (README), then collapses the history into ONE root commit with
+ * a CAS-guarded ref update — never overwriting foreign work.
+ *
  * The token lives ONLY in the server environment (platform Keys tab):
  *   GITHUB_TOKEN — classic personal access token with the `repo` scope.
  * ============================================================================
@@ -37,9 +42,10 @@ interface TreeEntry {
   sha: string;
 }
 
-/** Git blob object ID: sha1("blob <size>\\0" + content). */
+/** Git blob object ID: sha1("blob <size>" + NUL + content). */
 function gitBlobShaOf(buf: Buffer): string {
-  return createHash("sha1").update(`blob ${buf.length}\\0`).update(buf).digest("hex");
+  const header = Buffer.concat([Buffer.from(`blob ${buf.length}`, "utf8"), Buffer.alloc(1)]);
+  return createHash("sha1").update(header).update(buf).digest("hex");
 }
 
 async function gh<T>(path: string, token: string, init?: RequestInit): Promise<T> {
@@ -96,8 +102,18 @@ export const verifyRepo = action({
  * the repository's current head so existing files are preserved.
  */
 export const pushToGitHub = action({
-  args: { owner: v.string(), repo: v.string(), branch: v.optional(v.string()), pushId: v.string() },
-  handler: async (ctx, { owner, repo, branch, pushId }) => {
+  args: {
+    owner: v.string(),
+    repo: v.string(),
+    branch: v.optional(v.string()),
+    pushId: v.string(),
+    // Optional commit subject; defaults to the initial-commit message used by
+    // the seed/bootstrap flow above. Lets audited re-pushes carry their own
+    // message without ever rewriting existing history.
+    message: v.optional(v.string()),
+  },
+  handler: async (ctx, { owner, repo, branch, pushId, message }) => {
+    const commitMessage = message?.trim() || COMMIT_MESSAGE;
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
       return {
@@ -119,17 +135,28 @@ export const pushToGitHub = action({
     // 2) Current head commit (build on top of it — nothing is deleted)
     let baseCommitSha: string | null = null;
     let baseTreeSha: string | null = null;
+    // A "seed head" is a head commit created by a previous attempt of this same
+    // flow (empty-repo workaround): our exact commit message and a tree with at
+    // most one blob. Such a commit may be replaced by the final root commit.
+    let seedHead = false;
     try {
       const ref = await gh<{ object: { sha: string } }>(
         `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(refName)}`,
         token,
       );
       baseCommitSha = ref.object.sha;
-      const commit = await gh<{ tree: { sha: string } }>(
+      const head = await gh<{ message: string; tree: { sha: string } }>(
         `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`,
         token,
       );
-      baseTreeSha = commit.tree.sha;
+      baseTreeSha = head.tree.sha;
+      const headTree = await gh<{ tree: { type: string }[] }>(
+        `/repos/${owner}/${repo}/git/trees/${head.tree.sha}`,
+        token,
+      );
+      if (head.message === COMMIT_MESSAGE && headTree.tree.filter((t) => t.type === "blob").length <= 1) {
+        seedHead = true;
+      }
     } catch {
       // Empty repository — the push will create the first commit.
     }
@@ -147,10 +174,8 @@ export const pushToGitHub = action({
         .map((t) => [t.path, t.sha as string]),
     );
 
-    // 2b) Empty-repository bootstrap: GitHub's Git Data API refuses blob
-    //     creation on a repo with zero commits (409 "Git Repository is empty").
-    //     Seed the first commit through the Contents API with the README, then
-    //     continue with the normal flow.
+    // 2b) Empty-repository bootstrap: seed the first commit through the
+    //     Contents API with the README, then continue with the normal flow.
     let bootstrapped = false;
     const probe = (await ctx.runQuery(internal.githubSyncData.internalStagedPage, {
       pushId,
@@ -158,28 +183,29 @@ export const pushToGitHub = action({
     })) as unknown as { first?: { path: string; contentBase64: string } | null };
     const seed = probe.first ?? null;
     if (!baseCommitSha && seed) {
-        try {
-          const created = await gh<{ commit: { sha: string } }>(
-            `/repos/${owner}/${repo}/contents/${encodeURIComponent(seed.path)}`,
-            token,
-            {
-              method: "PUT",
-              body: JSON.stringify({ message: COMMIT_MESSAGE, content: seed.contentBase64 }),
-            },
-          );
-          baseCommitSha = created.commit.sha;
-          const seedCommit = await gh<{ tree: { sha: string } }>(
-            `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`,
-            token,
-          );
-          baseTreeSha = seedCommit.tree.sha;
-          bootstrapped = true;
-          // The seeded file already exists in the base tree — reuse its blob.
-          existingByPath.set(seed.path, gitBlobShaOf(Buffer.from(seed.contentBase64, "base64")));
-        } catch {
-          // Fall through — blob creation below surfaces a clear 409 if this failed.
-        }
+      try {
+        const created = await gh<{ commit: { sha: string } }>(
+          `/repos/${owner}/${repo}/contents/${encodeURIComponent(seed.path)}`,
+          token,
+          {
+            method: "PUT",
+            body: JSON.stringify({ message: COMMIT_MESSAGE, content: seed.contentBase64 }),
+          },
+        );
+        baseCommitSha = created.commit.sha;
+        const seedCommit = await gh<{ tree: { sha: string } }>(
+          `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`,
+          token,
+        );
+        baseTreeSha = seedCommit.tree.sha;
+        bootstrapped = true;
+        seedHead = true;
+        // The seeded file already exists in the base tree — reuse its blob.
+        existingByPath.set(seed.path, gitBlobShaOf(Buffer.from(seed.contentBase64, "base64")));
+      } catch {
+        // Fall through — blob creation below surfaces a clear 409 if this failed.
       }
+    }
 
     // 3) Stream staged files → create blobs → build tree entries
     const tree: TreeEntry[] = [];
@@ -202,10 +228,10 @@ export const pushToGitHub = action({
       for (const f of page) {
         try {
           const buf = Buffer.from(f.contentBase64, "base64");
-          const gitBlobSha = gitBlobShaOf(buf);
-          if (existingByPath.get(f.path) === gitBlobSha) {
+          const blobId = gitBlobShaOf(buf);
+          if (existingByPath.get(f.path) === blobId) {
             // Identical content already in the repo — reuse the existing blob.
-            tree.push({ path: f.path, mode: "100644", type: "blob", sha: gitBlobSha });
+            tree.push({ path: f.path, mode: "100644", type: "blob", sha: blobId });
             skippedUnchanged++;
             okIds.push({ id: f.id });
             continue;
@@ -243,6 +269,13 @@ export const pushToGitHub = action({
         failures: failed.slice(0, 10),
       };
     }
+    if (failed.length > 0) {
+      return {
+        ok: false as const,
+        error: `${failed.length} file(s) failed to upload — aborting the commit so the branch is never left half-written.`,
+        failures: failed.slice(0, 10),
+      };
+    }
 
     // 4) Create the tree (base_tree preserves every repo file not in our manifest)
     const newTree = await gh<{ sha: string }>(`/repos/${owner}/${repo}/git/trees`, token, {
@@ -250,45 +283,39 @@ export const pushToGitHub = action({
       body: JSON.stringify({ base_tree: baseTreeSha ?? undefined, tree }),
     });
 
-    // 5) Create the commit
+    // 5) Create the commit. When replacing a seed commit created by this flow,
+    //    make it a ROOT commit so history ends up as exactly one clean commit.
+    const replacingSeed = bootstrapped || seedHead;
     const commit = await gh<{ sha: string; html_url: string }>(`/repos/${owner}/${repo}/git/commits`, token, {
       method: "POST",
       body: JSON.stringify({
-        message: COMMIT_MESSAGE,
+        message: commitMessage,
         tree: newTree.sha,
-        parents: baseCommitSha ? [baseCommitSha] : [],
+        parents: baseCommitSha && !replacingSeed ? [baseCommitSha] : [],
       }),
     });
 
-    // 5b) If this action seeded the repo itself, collapse the bootstrap + main
-    //     commit into ONE root commit so history is a single clean commit.
-    //     CAS on the ref: only replaces work this action just created.
-    let final = commit;
-    if (bootstrapped && baseCommitSha) {
-      const root = await gh<{ sha: string; html_url: string }>(`/repos/${owner}/${repo}/git/commits`, token, {
-        method: "POST",
-        body: JSON.stringify({ message: COMMIT_MESSAGE, tree: newTree.sha, parents: [] }),
-      });
+    // 6) Move the branch ref. Never overwrites foreign work:
+    //    - normal case: fast-forward only (force: false)
+    //    - seed replacement: CAS — only if the head is still the seed commit
+    if (baseCommitSha && replacingSeed) {
       const refNow = await gh<{ object: { sha: string } }>(
         `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(refName)}`,
         token,
       );
-      if (refNow.object.sha === commit.sha) {
-        await gh(`/repos/${owner}/${repo}/git/refs/heads/${refName}`, token, {
-          method: "PATCH",
-          body: JSON.stringify({ sha: root.sha, force: true }),
-        });
-        final = root;
+      if (refNow.object.sha !== baseCommitSha) {
+        throw new Error("Repository head moved during push — aborting instead of overwriting foreign work.");
       }
-    }
-
-    // 6) Move the branch ref (fast-forward only — never overwrites foreign work)
-    if (baseCommitSha && !bootstrapped) {
+      await gh(`/repos/${owner}/${repo}/git/refs/heads/${refName}`, token, {
+        method: "PATCH",
+        body: JSON.stringify({ sha: commit.sha, force: true }),
+      });
+    } else if (baseCommitSha) {
       await gh(`/repos/${owner}/${repo}/git/refs/heads/${refName}`, token, {
         method: "PATCH",
         body: JSON.stringify({ sha: commit.sha, force: false }),
       });
-    } else if (!baseCommitSha) {
+    } else {
       await gh(`/repos/${owner}/${repo}/git/refs`, token, {
         method: "POST",
         body: JSON.stringify({ ref: `refs/heads/${refName}`, sha: commit.sha }),
@@ -297,8 +324,8 @@ export const pushToGitHub = action({
 
     return {
       ok: true as const,
-      commitSha: final.sha,
-      commitUrl: final.html_url,
+      commitSha: commit.sha,
+      commitUrl: commit.html_url,
       branch: refName,
       filesCommitted: committed,
       filesUnchanged: skippedUnchanged,

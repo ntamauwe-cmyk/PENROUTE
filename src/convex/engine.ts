@@ -295,7 +295,16 @@ async function createBatchCore(
     // ---- VALIDATION (spec §6, §8) — validate every record, reject nothing silently ----
     const pfas = await ctx.db.query("pfas").collect();
     if (pfas.length === 0) throw new Error("No PFAs configured on the platform");
-    const pfaByCode = new Map(pfas.map((p) => [p.code, p]));
+    // Selectable PFAs only — inactive PFAs cannot enter NEW contribution
+    // batches (their records stay visible historically via pfaId).
+    const pfaByCode = new Map(
+      pfas
+        .filter((p) => p.active !== false && p.status !== "INACTIVE")
+        .map((p) => [p.code, p]),
+    );
+    // Attribution map (incl. inactive rows) so invalid rows still reference a
+    // real master record instead of a free-text value.
+    const pfaAllByCode = new Map(pfas.map((p) => [p.code, p]));
     const pinSeen = new Map<string, number>();
     for (const r of records) {
       const k = r.pensionPin.toUpperCase().replace(/\s/g, "");
@@ -368,7 +377,9 @@ async function createBatchCore(
         fullName: r.fullName,
         employeeCode: r.employeeCode,
         pensionPin: pin,
-        pfaId: pfa ? pfa._id : pfas[0]._id, // placeholder when unknown; record is invalid anyway
+        // Reference a real master record: the resolved PFA, else the actual row
+        // for that code (even if inactive), else first row as last resort.
+        pfaId: pfa?._id ?? pfaAllByCode.get(r.pfaCode)?._id ?? pfas[0]._id,
         employeeContribution: Math.round(r.employeeContribution * 100),
         employerContribution: Math.round(r.employerContribution * 100),
         totalAmount: Math.round((r.employeeContribution + r.employerContribution) * 100),

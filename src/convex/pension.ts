@@ -3,83 +3,33 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getCurrentEmployer, getEmployerForUser } from "./employers";
+import { PFA_SEED, applyPfaSeed, isSelectable } from "./pfaDirectory";
 
 // ============================================================================
 // PFA DIRECTORY — licensed Pension Fund Administrators in Nigeria
 // ----------------------------------------------------------------------------
-// Reference data covering the licensed PFA market (post-consolidation, including
-// PenCom-approved merger entities: Access ARM, Sigma/First Guarantee, Tangerine
-// A&G, Radix/FUG). Admins can maintain this list from the console.
-// Codes are Penroute reference codes for routing/integration configuration —
-// they are NOT official PENCOM licence numbers. Every PFA starts on the
-// clearly-labelled sandbox adapter until a live integration is approved.
+// Master/reference data lives in pfaDirectory.ts (the 19 current PenCom-
+// licensed PFAs, keyed by immutable slug). syncPfaDirectory below keeps its
+// historical name/shape for existing UI callers and delegates to the same
+// idempotent seeder. Codes are Penroute reference codes for routing/integration
+// configuration — they are NOT official PENCOM licence numbers. PFAs default
+// to clearly-labelled "Not Integrated" until a live integration is approved.
 // ============================================================================
-const NIGERIAN_PFAS: { name: string; code: string }[] = [
-  { name: "Leadway Pensions", code: "001" },
-  { name: "Access ARM Pensions", code: "002" },
-  { name: "Stanbic IBTC Pension Managers", code: "003" },
-  { name: "AXA Mansard Pensions", code: "004" },
-  { name: "Aiico Pensions", code: "005" },
-  { name: "Apt Pensions", code: "006" },
-  { name: "Crusader Sterling Pensions", code: "007" },
-  { name: "Fidelity Pensions Managers", code: "008" },
-  { name: "Insurance Pensions Mutual", code: "009" },
-  { name: "Investment One Pension Managers", code: "010" },
-  { name: "Legacy Pension Managers", code: "011" },
-  { name: "Nigeria Police Pensions", code: "012" },
-  { name: "Nocal Pensions", code: "013" },
-  { name: "Oakra Pensions", code: "014" },
-  { name: "Pensions Alliance (PAL Pensions)", code: "015" },
-  { name: "Premium Pensions", code: "016" },
-  { name: "Sigma Pensions", code: "017" },
-  { name: "Trustfund Pensions", code: "018" },
-  { name: "Tangerine A&G Pensions", code: "019" },
-  { name: "Radix Pension Managers", code: "020" },
-];
 
 /**
- * Idempotently upserts the full PFA directory. Safe to call any time:
- * existing entries are matched by code (names refreshed), missing ones inserted.
+ * Idempotently adopts the full PFA directory (19 current licensed PFAs).
+ * Safe to call any time — never creates duplicates. Admins only: it updates
+ * master data.
  */
 export const syncPfaDirectory = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
+    if (user.role !== "admin") throw new Error("Admin access required");
 
-    const now = Date.now();
-    let inserted = 0;
-    let updated = 0;
-    for (const p of NIGERIAN_PFAS) {
-      const existing = await ctx.db
-        .query("pfas")
-        .withIndex("by_code", (q) => q.eq("code", p.code))
-        .first();
-      if (!existing) {
-        await ctx.db.insert("pfas", {
-          name: p.name,
-          code: p.code,
-          integrationMode: "sandbox_adapter",
-          active: true,
-          createdAt: now,
-        });
-        inserted++;
-      } else if (existing.name !== p.name || !existing.active) {
-        await ctx.db.patch(existing._id, { name: p.name, active: true });
-        updated++;
-      }
-    }
-
-    if (inserted > 0 || updated > 0) {
-      await ctx.db.insert("auditLogs", {
-        actor: user.email ?? "system",
-        action: "sync_pfa_directory",
-        entityType: "pfa",
-        details: `PFA directory synced: ${inserted} added, ${updated} updated (${NIGERIAN_PFAS.length} total)`,
-        createdAt: now,
-      });
-    }
-    return { inserted, updated, total: NIGERIAN_PFAS.length };
+    const result = await applyPfaSeed(ctx, user.email ?? "admin");
+    return { inserted: result.inserted, updated: result.updated, total: result.total };
   },
 });
 
@@ -522,16 +472,13 @@ export const seedDemoData = mutation({
       createdAt: now,
     });
 
-    // Seed the full licensed PFA directory (see NIGERIAN_PFAS above).
+    // Seed the full current licensed PFA directory idempotently (pfaDirectory.ts)
+    // — never duplicates existing rows on any deployment.
+    await applyPfaSeed(ctx, "system:demo_seed");
+    const pfaRows = await ctx.db.query("pfas").collect();
     const pfaIds: Record<string, Id<"pfas">> = {};
-    for (const p of NIGERIAN_PFAS) {
-      pfaIds[p.code] = await ctx.db.insert("pfas", {
-        name: p.name,
-        code: p.code,
-        integrationMode: "sandbox_adapter",
-        active: true,
-        createdAt: now,
-      });
+    for (const p of pfaRows) {
+      if (p.slug) pfaIds[p.slug] = p._id;
     }
 
     // 24 demo employees across 4 PFAs
@@ -544,7 +491,8 @@ export const seedDemoData = mutation({
       "Chiamaka Obi", "Femi Odukoya", "Hauwa Yusuf", "Tope Alabi",
     ];
     const pfaCycle = [
-      "001", "002", "003", "004", "018", "015", "016", "011",
+      "access_pensions", "stanbic_ibtc_pensions", "leadway_pensure", "trustfund_pensions",
+      "premium_pension", "crusadersterling_pensions", "fcmb_pensions", "fidelity_pension_managers",
     ];
     for (let i = 0; i < employeeNames.length; i++) {
       await ctx.db.insert("employees", {
@@ -677,6 +625,7 @@ export const addEmployee = mutation({
 
     const pfa = await ctx.db.get(pfaId);
     if (!pfa) throw new Error("Unknown PFA");
+    if (!isSelectable(pfa)) throw new Error(`${pfa.name} is inactive and cannot be selected for new pension records`);
 
     const dup = await ctx.db
       .query("employees")
@@ -736,6 +685,12 @@ export const updateEmployee = mutation({
 
     const pfa = await ctx.db.get(pfaId);
     if (!pfa) throw new Error("Unknown PFA");
+    // Inactive PFAs cannot be chosen for new/changed assignments; keeping an
+    // employee on their existing (possibly deactivated) PFA remains allowed so
+    // historical records keep resolving.
+    if (pfaId !== employee.pfaId && !isSelectable(pfa)) {
+      throw new Error(`${pfa.name} is inactive and cannot be selected for new pension records`);
+    }
 
     // Duplicate-PIN check excludes the employee being edited.
     if (cleanPin !== employee.pensionPin) {

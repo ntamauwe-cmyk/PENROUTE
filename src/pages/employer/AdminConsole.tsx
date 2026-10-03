@@ -123,6 +123,33 @@ export default function AdminConsole() {
             <StatTile label="Ledger rows" value={String(overview.ledgerCount)} />
           </section>
 
+          {/* PFA statistics — real database values */}
+          <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <StatTile
+              label="Active PFAs"
+              value={`${overview.pfaStats.activePfas} / ${overview.pfaStats.totalPfas}`}
+              sub="Current licensed directory"
+            />
+            <StatTile
+              label="PFAs with transactions"
+              value={String(overview.pfaStats.pfasWithTransactions)}
+            />
+            <StatTile
+              label="Employees processed"
+              value={String(overview.pfaStats.employeesProcessed)}
+              sub="Distinct RSA PINs"
+            />
+            <StatTile
+              label="Pending remittances"
+              value={String(overview.pfaStats.pendingRemittances)}
+            />
+            <StatTile
+              label="Unreconciled contributions"
+              value={String(overview.pfaStats.unreconciledContributions)}
+              sub="Batches awaiting reconciliation"
+            />
+          </section>
+
           {/* PLUG-AND-PLAY: payment rail switch */}
           <section className="pen-card-lg p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">

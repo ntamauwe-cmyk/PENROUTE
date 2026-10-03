@@ -63,19 +63,39 @@ const schema = defineSchema(
       .index("by_status", ["status"]),
 
     // ------------------------------------------------------------------
-    // PFAs — Pension Fund Administrators directory
+    // PFAs — Pension Fund Administrators directory (master/reference data)
+    // `slug` is the immutable internal identifier (never the display name).
+    // All contact/website/logo fields stay null until verified — never invent.
     // ------------------------------------------------------------------
     pfas: defineTable({
       name: v.string(),
-      code: v.string(), // PENCOM PFA code, e.g. "023"
+      code: v.string(), // Penroute reference code, e.g. "101" — NOT an official PenCom number
+      slug: v.optional(v.string()), // immutable master id, e.g. "access_pensions"
+      legalName: v.optional(v.string()),
+      shortName: v.optional(v.string()),
+      // pencom_status: LICENSED for current licensed PFAs (undefined for retired legacy rows)
+      pencomStatus: v.optional(v.string()),
+      // status: ACTIVE | INACTIVE (soft deactivation only — never delete a PFA)
+      status: v.optional(v.string()),
+      // integration_status: not_integrated | sandbox | pending_approval | production
+      // Defaults to not_integrated — never auto-marked as integrated.
+      integrationStatus: v.optional(v.string()),
+      logoUrl: v.optional(v.string()), // null until an approved asset exists
+      websiteUrl: v.optional(v.string()), // null until verified
+      supportEmail: v.optional(v.string()), // null until verified
+      supportPhone: v.optional(v.string()), // null until verified
+      headquartersAddress: v.optional(v.string()), // null until verified
       // integration: sandbox_adapter | live_api | manual
       integrationMode: v.string(),
-      // settlement: pending_settlement | instructed | settled
       active: v.boolean(),
       // reserved for approved live integration credentials — never exposed to frontend
       endpointConfig: v.optional(v.object({})),
       createdAt: v.number(),
-    }).index("by_code", ["code"]),
+      updatedAt: v.optional(v.number()),
+    })
+      .index("by_code", ["code"])
+      .index("by_slug", ["slug"])
+      .index("by_status", ["status"]),
 
     // ------------------------------------------------------------------
     // Employees / pension data
@@ -91,6 +111,7 @@ const schema = defineSchema(
     })
       .index("by_employer", ["employerId"])
       .index("by_pin", ["pensionPin"])
+      .index("by_pfa", ["pfaId"])
       .index("by_employer_pin", ["employerId", "pensionPin"]),
 
     // ------------------------------------------------------------------
@@ -150,6 +171,7 @@ const schema = defineSchema(
     })
       .index("by_batch", ["batchId"])
       .index("by_employer", ["employerId"])
+      .index("by_pfa", ["pfaId"])
       .index("by_pfa_batch", ["pfaId", "batchId"])
       .index("by_pin_period", ["pensionPin", "contributionYear", "contributionMonth"]),
 
@@ -233,6 +255,7 @@ const schema = defineSchema(
       .index("by_batch", ["batchId"])
       .index("by_employer", ["employerId"])
       .index("by_account", ["account"])
+      .index("by_pfa", ["pfaId"])
       .index("by_ref", ["entryRef"]),
 
     // Platform fee configuration — admin configurable, never hard-coded
@@ -264,6 +287,7 @@ const schema = defineSchema(
     })
       .index("by_batch", ["batchId"])
       .index("by_employer", ["employerId"])
+      .index("by_pfa", ["pfaId"])
       .index("by_status", ["status"])
       .index("by_ref", ["exceptionRef"]),
 
@@ -278,6 +302,10 @@ const schema = defineSchema(
       employerId: v.optional(v.id("employers")),
       batchId: v.optional(v.id("contributionBatches")),
       details: v.optional(v.string()),
+      // machine-readable previous/new values for administrative changes
+      field: v.optional(v.string()),
+      before: v.optional(v.string()),
+      after: v.optional(v.string()),
       createdAt: v.number(),
     })
       .index("by_batch", ["batchId"])

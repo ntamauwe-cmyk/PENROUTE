@@ -45,6 +45,20 @@ export const getAdminOverview = query({
     const totalPension = batches.reduce((s, b) => s + b.totalPensionAmount, 0);
     const totalFees = batches.reduce((s, b) => s + b.platformFee, 0);
 
+    // PFA statistics — real database values only (no fabricated metrics).
+    const [pfas, settlements, records] = await Promise.all([
+      ctx.db.query("pfas").collect(),
+      ctx.db.query("settlements").collect(),
+      ctx.db.query("contributionRecords").collect(),
+    ]);
+    const pfasWithTransactions = new Set(settlements.map((s) => String(s.pfaId)));
+    for (const r of records) pfasWithTransactions.add(String(r.pfaId));
+    const processedEmployees = new Set(records.map((r) => r.pensionPin)).size;
+    const pendingRemittances = settlements.filter(
+      (s) => s.status === "pending" || s.status === "processing",
+    ).length;
+    const unreconciled = batches.filter((b) => b.reconciliationStatus !== "reconciled").length;
+
     return {
       employersCount: employers.length,
       batchesCount: batches.length,
@@ -57,6 +71,14 @@ export const getAdminOverview = query({
       exceptions,
       ledgerCount: ledger.length,
       recentLogs: logs,
+      pfaStats: {
+        activePfas: pfas.filter((p) => p.active !== false && p.status !== "INACTIVE").length,
+        totalPfas: pfas.length,
+        pfasWithTransactions: pfasWithTransactions.size,
+        employeesProcessed: processedEmployees,
+        pendingRemittances,
+        unreconciledContributions: unreconciled,
+      },
     };
   },
 });

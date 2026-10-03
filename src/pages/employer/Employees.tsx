@@ -148,11 +148,19 @@ export default function Employees() {
             <SelectValue placeholder="Select PFA" />
           </SelectTrigger>
           <SelectContent>
-            {(pfas as any[]).map((p) => (
-              <SelectItem key={p._id} value={p._id}>
-                {p.name} ({p.code})
-              </SelectItem>
-            ))}
+            {/* Inactive PFAs are not selectable for new/changed assignments,
+                except the employee's current (possibly deactivated) PFA. */}
+            {(pfas as any[])
+              .filter(
+                (p) =>
+                  (p.active !== false && p.status !== "INACTIVE") || p._id === form.pfaId,
+              )
+              .map((p) => (
+                <SelectItem key={p._id} value={p._id}>
+                  {p.name} ({p.code})
+                  {p.active === false || p.status === "INACTIVE" ? " — inactive" : ""}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
       </div>
@@ -241,7 +249,7 @@ export default function Employees() {
           }
         >
           {filtered.map((e: any) => (
-            <tr key={e._id} className="border-t border-border/50">
+            <tr key={e._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-medium">{e.fullName}</td>
               <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{e.employeeCode}</td>
               <td className="px-3 py-2.5 tabular-nums">{e.pensionPin}</td>

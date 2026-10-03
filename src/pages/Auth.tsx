@@ -95,7 +95,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   };
 
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen bg-[#F7F9F8]">
       {/* ===== Left: navy brand panel (premium split-screen) ===== */}
       <aside className="pen-nav relative hidden w-[46%] flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
         <RouteLines />
@@ -128,7 +128,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
             <Logo size="md" tagline />
           </button>
 
-          <div className="pen-card-lg p-7 sm:p-8">
+          <div className="pen-card-lg p-7 shadow-[0_18px_55px_-30px_rgb(11_31_42_/_0.28)] sm:p-8">
             {step === "signIn" ? (
               <>
                 <div className="flex items-center gap-3">
