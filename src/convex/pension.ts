@@ -184,7 +184,11 @@ export const listPfas = query({
     const pfas = await ctx.db.query("pfas").collect();
     // SECURITY: endpointConfig holds live integration credentials (server-only).
     // Strip it from every row before returning to any caller.
-    return pfas.map(({ endpointConfig, ...safe }) => safe);
+    return pfas.map((p) => {
+      const safe = { ...p };
+      delete safe.endpointConfig;
+      return safe;
+    });
   },
 });
 
@@ -380,6 +384,7 @@ export const listEmployerEmployees = query({
         fullName: e.fullName,
         pensionPin: e.pensionPin,
         active: e.active,
+        pfaId: e.pfaId,
         pfaName: pfaById.get(e.pfaId)?.name ?? "Unknown PFA",
         pfaCode: pfaById.get(e.pfaId)?.code ?? "?",
       }));

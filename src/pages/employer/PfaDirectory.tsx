@@ -61,7 +61,7 @@ export default function PfaDirectory() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((p: any) => {
+    return rows.filter((p) => {
       const isActive = p.active && p.status !== "INACTIVE";
       const statusOk =
         filter === "all" ||
@@ -105,7 +105,7 @@ export default function PfaDirectory() {
     }
   };
 
-  const toggleStatus = async (p: any) => {
+  const toggleStatus = async (p: (typeof rows)[number]) => {
     setBusyId(p._id);
     try {
       const next = !(p.active && p.status !== "INACTIVE");
@@ -203,7 +203,7 @@ export default function PfaDirectory() {
           isEmpty={filtered.length === 0}
           emptyMessage="No PFAs match the current search or filter."
         >
-          {filtered.map((p: any) => (
+          {filtered.map((p) => (
             <tr
               key={p._id}
               className="pen-table-row cursor-pointer"
@@ -290,7 +290,7 @@ export default function PfaDirectory() {
             No PFAs match the current search or filter.
           </div>
         ) : (
-          filtered.map((p: any) => (
+          filtered.map((p) => (
             <div key={p._id} className="pen-card p-4">
               <button
                 className="w-full text-left"

@@ -246,7 +246,6 @@ function GitHubSyncCard() {
   };
 
   const busy = verifying || staging || pushing;
-  const stagedCount = status?.byStatus?.staged ?? 0;
 
   return (
     <section className="pen-card-lg p-6">

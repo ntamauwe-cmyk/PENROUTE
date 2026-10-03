@@ -22,7 +22,6 @@ import {
   ArrowLeft,
   Building2,
   Globe,
-  Landmark,
   Mail,
   MapPin,
   PauseCircle,
@@ -71,7 +70,6 @@ function SectionCard({
 
 export default function PfaDetail() {
   const { pfaId } = useParams<{ pfaId: string }>();
-  const navigate = useNavigate();
   const me = useQuery(api.users.currentUser);
 
   if (me === undefined) {

@@ -22,12 +22,12 @@ export default function Reconciliation() {
   const exceptions = useQuery(api.pension.listEmployerExceptions);
   const { batches } = useEmployer();
   const resolve = useMutation(api.pension.resolveException);
-  const [resolving, setResolving] = useState<any>(null);
+  const [resolving, setResolving] = useState<NonNullable<typeof exceptions>[number] | null>(null);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const open = (exceptions ?? []).filter((e: any) => e.status !== "resolved");
-  const resolved = (exceptions ?? []).filter((e: any) => e.status === "resolved");
+  const open = (exceptions ?? []).filter((e) => e.status !== "resolved");
+  const resolved = (exceptions ?? []).filter((e) => e.status === "resolved");
 
   const handleResolve = async () => {
     if (!resolving) return;
@@ -59,7 +59,7 @@ export default function Reconciliation() {
           isEmpty={batches.length === 0}
           emptyMessage="No batches to reconcile yet."
         >
-          {batches.map((b: any) => (
+          {batches.map((b) => (
             <tr key={b._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-mono text-xs font-medium">{b.batchRef}</td>
               <td className="px-3 py-2.5">{b.contributionMonth}/{b.contributionYear}</td>
@@ -89,7 +89,7 @@ export default function Reconciliation() {
             isEmpty={exceptions.length === 0}
             emptyMessage="No exceptions — every naira reconciles. 🎉"
           >
-            {[...open, ...resolved].map((e: any) => (
+            {[...open, ...resolved].map((e) => (
               <tr key={e._id} className="pen-table-row">
                 <td className="px-3 py-2.5 font-mono text-xs">{e.exceptionRef}</td>
                 <td className="px-3 py-2.5">

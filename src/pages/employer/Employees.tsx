@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,7 +55,7 @@ export default function Employees() {
   const filtered = useMemo(
     () =>
       (employees ?? []).filter(
-        (e: any) =>
+        (e) =>
           e.fullName.toLowerCase().includes(search.toLowerCase()) ||
           e.pensionPin.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeCode.toLowerCase().includes(search.toLowerCase()),
@@ -83,11 +84,11 @@ export default function Employees() {
     try {
       if (editing) {
         await updateEmployee({
-          employeeId: editing._id as any,
+          employeeId: editing._id as Id<"employees">,
           fullName: form.fullName,
           employeeCode: form.employeeCode,
           pensionPin: form.pensionPin,
-          pfaId: form.pfaId as any,
+          pfaId: form.pfaId as Id<"pfas">,
         });
         toast.success(`${form.fullName} updated`);
         setEditing(null);
@@ -96,7 +97,7 @@ export default function Employees() {
           fullName: form.fullName,
           employeeCode: form.employeeCode,
           pensionPin: form.pensionPin,
-          pfaId: form.pfaId as any,
+          pfaId: form.pfaId as Id<"pfas">,
         });
         toast.success(`${form.fullName} added to the roster`);
         setAddOpen(false);
@@ -150,7 +151,7 @@ export default function Employees() {
           <SelectContent>
             {/* Inactive PFAs are not selectable for new/changed assignments,
                 except the employee's current (possibly deactivated) PFA. */}
-            {(pfas as any[])
+            {(pfas)
               .filter(
                 (p) =>
                   (p.active !== false && p.status !== "INACTIVE") || p._id === form.pfaId,
@@ -248,7 +249,7 @@ export default function Employees() {
               : "No employees match your search."
           }
         >
-          {filtered.map((e: any) => (
+          {filtered.map((e) => (
             <tr key={e._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-medium">{e.fullName}</td>
               <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{e.employeeCode}</td>
@@ -271,7 +272,7 @@ export default function Employees() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => openEdit(e as EmployeeRow)}
+                    onClick={() => openEdit(e)}
                   >
                     <Pencil className="size-4" /> Edit
                   </Button>

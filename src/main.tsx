@@ -52,14 +52,14 @@ function RouteLoading() {
  * (full width, no editor chrome). Never shows in production or standalone use.
  */
 function FullWindowButton() {
-  const [embedded, setEmbedded] = useState(false);
-  useEffect(() => {
+  // Detect framing once during the initial render (no effect + setState).
+  const [embedded] = useState(() => {
     try {
-      setEmbedded(window.self !== window.top);
+      return window.self !== window.top;
     } catch {
-      setEmbedded(true); // cross-origin access threw — we're framed
+      return true; // cross-origin access threw — we're framed
     }
-  }, []);
+  });
   if (!embedded) return null;
   return (
     <button

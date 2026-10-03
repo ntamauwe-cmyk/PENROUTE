@@ -85,31 +85,31 @@ function AdminConsoleBody() {
   const [pfaOperatorPfaId, setPfaOperatorPfaId] = useState<string>("");
   const [grantBusy, setGrantBusy] = useState(false);
 
-  const [fee, setFee] = useState("");
+  // null = no local edit yet — the input shows the server-configured fee.
+  const [fee, setFee] = useState<string | null>(null);
+  const feeValue = fee ?? String(overview?.feePerEmployeeKobo ?? "");
   const [rail, setRail] = useState<{ mode: string; configured: boolean } | null>(null);
-  const [checkingRail, setCheckingRail] = useState(false);
+  const [checkingRail, setCheckingRail] = useState(true); // status fetch starts on mount
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (overview && !fee) setFee(String(overview.feePerEmployeeKobo));
-  }, [overview, fee]);
+  // Fetch the payment rail status once on mount. setState only runs inside
+  // promise callbacks (async) — never synchronously within the effect.
+  const refreshRail = () =>
+    railStatus({})
+      .then((res) => {
+        setRail({ mode: res.mode, configured: res.configured });
+      })
+      .catch(() => {
+        setRail({ mode: "sandbox", configured: false });
+      })
+      .finally(() => {
+        setCheckingRail(false);
+      });
 
   useEffect(() => {
-    if (!rail) void refreshRail();
+    void refreshRail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const refreshRail = async () => {
-    setCheckingRail(true);
-    try {
-      const res = await railStatus({});
-      setRail({ mode: res.mode, configured: res.configured });
-    } catch {
-      setRail({ mode: "sandbox", configured: false });
-    } finally {
-      setCheckingRail(false);
-    }
-  };
 
   const flipRail = async (mode: "sandbox" | "live") => {
     if (mode === "live" && rail && !rail.configured) {
@@ -121,6 +121,7 @@ function AdminConsoleBody() {
     setBusy(true);
     try {
       await setRailMode({ mode });
+      setCheckingRail(true);
       await refreshRail();
       toast.success(`Payment rail switched to ${mode.toUpperCase()}`);
     } catch (e) {
@@ -161,7 +162,7 @@ function AdminConsoleBody() {
   };
 
   const saveFee = async () => {
-    const n = Number(fee);
+    const n = Number(feeValue);
     if (!Number.isFinite(n) || n < 0) {
       toast.error("Enter a valid fee in kobo (₦9 = 900)");
       return;
@@ -251,7 +252,15 @@ function AdminConsoleBody() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Button variant="outline" size="sm" onClick={refreshRail} disabled={checkingRail}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCheckingRail(true);
+                  void refreshRail();
+                }}
+                disabled={checkingRail}
+              >
                 {checkingRail ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 Check key status
               </Button>
@@ -467,14 +476,14 @@ function AdminConsoleBody() {
                 <Label>Fee (kobo)</Label>
                 <Input
                   className="mt-1.5"
-                  value={fee}
+                  value={feeValue}
                   onChange={(e) => setFee(e.target.value)}
                   inputMode="numeric"
                   placeholder="900"
                 />
               </div>
               <p className="pb-2 text-sm text-muted-foreground">
-                = ₦{Number.isFinite(Number(fee)) ? (Number(fee) / 100).toFixed(0) : "?"} per employee
+                = ₦{Number.isFinite(Number(feeValue)) ? (Number(feeValue) / 100).toFixed(0) : "?"} per employee
                 credit
               </p>
               <Button className="font-semibold" onClick={saveFee} disabled={busy}>
@@ -496,7 +505,7 @@ function AdminConsoleBody() {
                 isEmpty={employers.length === 0}
                 emptyMessage="No employers registered yet."
               >
-                {employers.map((e: any) => (
+                {employers.map((e) => (
                   <tr key={e._id} className="border-t border-border/50">
                     <td className="px-3 py-2.5">
                       <p className="font-medium">{e.name}</p>
@@ -557,7 +566,7 @@ function AdminConsoleBody() {
                 isEmpty={exceptions.length === 0}
                 emptyMessage="No exceptions across the platform."
               >
-                {exceptions.map((e: any) => (
+                {exceptions.map((e) => (
                   <tr key={e._id} className="border-t border-border/50">
                     <td className="px-3 py-2.5 font-mono text-xs">{e.exceptionRef}</td>
                     <td className="px-3 py-2.5 text-sm">{e.employerName}</td>
@@ -590,7 +599,7 @@ function AdminConsoleBody() {
               isEmpty={(overview.recentLogs ?? []).length === 0}
               emptyMessage="No adapter calls yet."
             >
-              {(overview.recentLogs ?? []).map((l: any) => (
+              {(overview.recentLogs ?? []).map((l) => (
                 <tr key={l._id} className="border-t border-border/50">
                   <td className="px-3 py-2.5 font-mono text-xs">{l.adapter}</td>
                   <td className="px-3 py-2.5 text-xs font-medium">{l.operation}</td>

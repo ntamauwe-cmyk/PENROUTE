@@ -15,7 +15,7 @@ export default function AuditTrail() {
   const filtered = useMemo(
     () =>
       (logs ?? []).filter(
-        (l: any) =>
+        (l) =>
           l.action.toLowerCase().includes(search.toLowerCase()) ||
           (l.actor ?? "").toLowerCase().includes(search.toLowerCase()) ||
           (l.details ?? "").toLowerCase().includes(search.toLowerCase()),
@@ -48,7 +48,7 @@ export default function AuditTrail() {
           isEmpty={filtered.length === 0}
           emptyMessage="No audit entries yet."
         >
-          {filtered.map((l: any) => (
+          {filtered.map((l) => (
             <tr key={l._id} className="pen-table-row">
               <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">
                 {fmtDateTime(l.createdAt)}

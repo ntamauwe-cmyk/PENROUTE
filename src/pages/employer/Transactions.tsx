@@ -9,12 +9,9 @@ export default function Transactions() {
   const payments = useQuery(api.pension.listEmployerPayments);
   const { batches } = useEmployer();
 
-  const batchRefById = new Map(batches.map((b: any) => [b._id, b.batchRef]));
+  const batchRefById = new Map(batches.map((b) => [b._id, b.batchRef]));
   const reconByBatch = new Map<string, string>(
-    batches.map((b: { _id: string; reconciliationStatus: string }) => [
-      b._id,
-      b.reconciliationStatus,
-    ]),
+    batches.map((b) => [b._id, b.reconciliationStatus]),
   );
 
   return (
@@ -42,7 +39,7 @@ export default function Transactions() {
           isEmpty={payments.length === 0}
           emptyMessage="No transactions yet — payments appear here after your first contribution."
         >
-          {payments.map((p: any) => (
+          {payments.map((p) => (
             <tr key={p._id} className="pen-table-row">
               <td className="px-3 py-2.5">
                 <p className="font-mono text-xs font-semibold">{p.paymentRef}</p>

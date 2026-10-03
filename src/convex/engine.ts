@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -21,11 +21,10 @@ import { markChargeFailed, markChargePaid, syncBillingCharge } from "./billing";
 // ============================================================================
 
 /** Read a numeric system flag (e.g. rail_mode) — configuration over code. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getSystemValue(ctx: any, key: string, fallback: number): Promise<number> {
+async function getSystemValue(ctx: MutationCtx, key: string, fallback: number): Promise<number> {
   const row = await ctx.db
     .query("systemConfig")
-    .withIndex("by_key", (q: any) => q.eq("key", key))
+    .withIndex("by_key", (q) => q.eq("key", key))
     .first();
   return row?.value ?? fallback;
 }
@@ -553,7 +552,7 @@ export const payBatch = mutation({
       throw new Error("Payment rail declined the collection");
     }
 
-    const paymentId = await ctx.db.insert("payments", {
+    await ctx.db.insert("payments", {
       batchId,
       employerId: employer._id,
       paymentRef,
@@ -591,7 +590,7 @@ async function recordSuccessfulPayment(
     batchId: Id<"contributionBatches">;
     employerId: Id<"employers">;
     employerName: string;
-    valid: { pfaId: Id<"pfas">; totalAmount: number }[];
+    valid: Doc<"contributionRecords">[];
     feePerEmployee: number;
     paymentRef: string;
     rail: string;
@@ -602,8 +601,8 @@ async function recordSuccessfulPayment(
   const allPfas = await ctx.db.query("pfas").collect();
   const pfaCodeById = new Map(allPfas.map((p) => [String(p._id), p.code]));
 
-  const employeeSum = opts.valid.reduce((s, r) => s + (r as any).employeeContribution, 0);
-  const employerSum = opts.valid.reduce((s, r) => s + (r as any).employerContribution, 0);
+  const employeeSum = opts.valid.reduce((s, r) => s + r.employeeContribution, 0);
+  const employerSum = opts.valid.reduce((s, r) => s + r.employerContribution, 0);
   const pension = employeeSum + employerSum;
   const fee = opts.valid.length * opts.feePerEmployee;
   const totalDebit = pension + fee;
@@ -963,7 +962,20 @@ export const processPipeline = mutation({
       .query("settlements")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
       .collect();
-    const settlementByPfa = new Map(existingSettlements.map((s) => [String(s.pfaId), s]));
+    // Settlement entries: existing docs, or the lightweight instruction we just
+    // inserted (id + ref, without a status field yet on this in-memory copy).
+    type SettlementEntry =
+      | Doc<"settlements">
+      | {
+          _id: Id<"settlements">;
+          pfaId: Id<"pfas">;
+          amount: number;
+          count: number;
+          settlementRef: string;
+        };
+    const settlementByPfa = new Map<string, SettlementEntry>(
+      existingSettlements.map((s) => [String(s.pfaId), s]),
+    );
 
     const pfaRows = await ctx.db.query("pfas").collect();
     const pfaMode = new Map(pfaRows.map((p) => [String(p._id), p.integrationMode]));
@@ -997,7 +1009,7 @@ export const processPipeline = mutation({
           status: "pending",
           instructedAt: now,
         });
-        settlementByPfa.set(key, { ...g, _id: liveId, settlementRef } as any);
+        settlementByPfa.set(key, { ...g, _id: liveId, settlementRef });
         await logIntegration(ctx, {
           adapter: "pfa_live",
           operation: "settlement_queued",
@@ -1021,7 +1033,7 @@ export const processPipeline = mutation({
         confirmedAt: railResult.accepted ? now : undefined,
         failureReason: railResult.accepted ? undefined : railResult.reason,
       });
-      settlementByPfa.set(key, { ...g, _id: settlementId, settlementRef } as any);
+      settlementByPfa.set(key, { ...g, _id: settlementId, settlementRef });
       await logIntegration(ctx, {
         adapter: "settlement_sandbox",
         operation: "settle_to_pfa",
@@ -1100,7 +1112,7 @@ export const processPipeline = mutation({
       // (received/accepted/posted) — never synthesize one here.
       if (pfaMode.get(String(settlement.pfaId)) === "live_api") continue;
 
-      const ack = pfaAcknowledgeSandbox(settlement.settlementRef);
+      const ack = pfaAcknowledgeSandbox();
       await ctx.db.insert("pfaAcknowledgements", {
         settlementId: settlement._id,
         batchId,
@@ -1132,15 +1144,19 @@ export const processPipeline = mutation({
     }
     const ackByPfa = new Map(ackRows.map((a) => [String(a.pfaId), a.status]));
     for (const r of valid) {
-      const settlement = settlementByPfa.get(String(r.pfaId)) as any;
+      const settlement = settlementByPfa.get(String(r.pfaId));
+      // Entries created earlier in this run are in-memory copies without a
+      // status field — only trust status when it is actually present.
+      const settlementStatus =
+        settlement && "status" in settlement ? settlement.status : undefined;
       const ackStatus = settlement && ackByPfa.get(String(r.pfaId));
       await ctx.db.patch(r._id, {
         settlementStatus: settlement
-          ? settlement.status === "settled"
+          ? settlementStatus === "settled"
             ? "settled"
             : "failed"
           : "pending",
-        pfaStatus: settlement?.status === "settled" ? (ackStatus ?? "awaiting_ack") : "awaiting_ack",
+        pfaStatus: settlementStatus === "settled" ? (ackStatus ?? "awaiting_ack") : "awaiting_ack",
       });
     }
     await ctx.db.patch(batchId, { pfaStatus: "posted" });

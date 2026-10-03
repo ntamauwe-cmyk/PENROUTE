@@ -24,18 +24,18 @@ export default function Statements() {
   const pfaReport = useQuery(api.pfaDirectory.getPfaReports);
 
   const years = useMemo(
-    () => [...new Set(batches.map((b: any) => b.contributionYear))].sort((a, b) => b - a),
+    () => [...new Set(batches.map((b) => b.contributionYear))].sort((a, b) => b - a),
     [batches],
   );
 
   // Which batch refs touch the selected PFA (empty set = no PFA activity).
   const pfaBatchRefs = useMemo(() => {
     if (pfaFilter === "all" || !pfaReport) return null;
-    const row = pfaReport.rows.find((r: any) => r.pfaId === pfaFilter);
+    const row = pfaReport.rows.find((r) => r.pfaId === pfaFilter);
     return new Set(row?.batchRefs ?? []);
   }, [pfaFilter, pfaReport]);
 
-  const filtered = batches.filter((b: any) => {
+  const filtered = batches.filter((b) => {
     const mOk = monthFilter === "all" || String(b.contributionMonth) === monthFilter;
     const yOk = yearFilter === "all" || String(b.contributionYear) === yearFilter;
     const pfaOk = pfaBatchRefs === null || pfaBatchRefs.has(b.batchRef);
@@ -46,11 +46,11 @@ export default function Statements() {
     if (!pfaReport) return [];
     return pfaFilter === "all"
       ? pfaReport.rows
-      : pfaReport.rows.filter((r: any) => r.pfaId === pfaFilter);
+      : pfaReport.rows.filter((r) => r.pfaId === pfaFilter);
   }, [pfaReport, pfaFilter]);
 
   const reportTotals = reportRows.reduce(
-    (acc: any, r: any) => ({
+    (acc, r) => ({
       employees: acc.employees + r.employeesCount,
       contributions: acc.contributions + r.totalContribution,
       remitted: acc.remitted + r.remittedAmount,
@@ -87,7 +87,7 @@ export default function Statements() {
       ["Generated", new Date().toISOString()],
       [],
       headers,
-      ...reportRows.map((r: any) => {
+      ...reportRows.map((r) => {
         const row: (string | number)[] = [
           r.name,
           r.slug ?? "",
@@ -130,7 +130,7 @@ export default function Statements() {
   };
 
   const totals = filtered.reduce(
-    (acc: any, b: any) => ({
+    (acc, b) => ({
       employees: acc.employees + b.employeeCount,
       pension: acc.pension + b.totalPensionAmount,
       fees: acc.fees + b.platformFee,
@@ -145,7 +145,7 @@ export default function Statements() {
       ["Generated", new Date().toISOString()],
       [],
       ["Period", "Batch", "Employees", "Employee contributions", "Employer contributions", "Pension total", "Processing fee", "Total paid", "Status", "Paid on"],
-      ...filtered.map((b: any) => [
+      ...filtered.map((b) => [
         `${monthName(b.contributionMonth)} ${b.contributionYear}`,
         b.batchRef,
         b.employeeCount,
@@ -199,7 +199,7 @@ export default function Statements() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All PFAs</SelectItem>
-                {(pfaReport?.rows ?? []).map((r: any) => (
+                {(pfaReport?.rows ?? []).map((r) => (
                   <SelectItem key={r.pfaId} value={r.pfaId}>
                     {r.name}
                   </SelectItem>
@@ -235,7 +235,7 @@ export default function Statements() {
                     </td>
                   </tr>
                 ) : (
-                  reportRows.map((r: any) => (
+                  reportRows.map((r) => (
                     <tr key={r.pfaId} className="pen-table-row">
                       <td className="px-3 py-2.5">
                         <span className="block font-medium leading-tight">{r.name}</span>
@@ -307,7 +307,7 @@ export default function Statements() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All years</SelectItem>
-              {years.map((y: any) => (
+              {years.map((y) => (
                 <SelectItem key={y} value={String(y)}>
                   {y}
                 </SelectItem>
@@ -323,7 +323,7 @@ export default function Statements() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All PFAs</SelectItem>
-              {(pfaReport?.rows ?? []).map((r: any) => (
+              {(pfaReport?.rows ?? []).map((r) => (
                 <SelectItem key={r.pfaId} value={r.pfaId}>
                   {r.name}
                 </SelectItem>
@@ -359,7 +359,7 @@ export default function Statements() {
           isEmpty={filtered.length === 0}
           emptyMessage="No contributions match the selected filters."
         >
-          {filtered.map((b: any) => (
+          {filtered.map((b) => (
             <tr key={b._id} className="pen-table-row">
               <td className="px-3 py-2.5 font-medium">
                 {monthName(b.contributionMonth)} {b.contributionYear}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -35,7 +35,6 @@ export function LivePaymentPanel({
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [checking, setChecking] = useState(false);
-  const startedRef = useRef(false);
 
   const paymentRef = context?.paymentRef ?? null;
   const expectedKobo = context?.expectedKobo ?? amountKobo;

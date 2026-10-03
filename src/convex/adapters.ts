@@ -1,6 +1,7 @@
 import { internalMutation, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 // ============================================================================
 // INTEGRATION ADAPTER LAYER  (spec §13, §14, §15, §38)
@@ -35,7 +36,7 @@ export async function logIntegration(
     requestSummary: string;
     responseSummary: string;
     success: boolean;
-    batchId?: any;
+    batchId?: Id<"contributionBatches">;
   },
 ) {
   await ctx.db.insert("integrationLogs", {
@@ -89,7 +90,7 @@ export function settlementRailSandboxSubmit(settlementRef: string, amountKobo: n
  * Simulates the PFA responding: received -> accepted -> posted.
  * Live replacement: the PFA's approved API responds with real statuses.
  */
-export function pfaAcknowledgeSandbox(settlementRef: string) {
+export function pfaAcknowledgeSandbox() {
   return {
     status: "posted" as const,
     message: "PFA sandbox: contribution file processed and posted to RSAs",
@@ -129,7 +130,7 @@ export const testAdapters = mutation({
   handler: async (ctx, args) => {
     const pinResult = pencomValidatePensionPinSandbox(args.pin, args.pfaCode);
     const railResult = settlementRailSandboxSubmit("TEST-" + Date.now(), args.amountKobo);
-    const ackResult = pfaAcknowledgeSandbox("TEST-" + Date.now());
+    const ackResult = pfaAcknowledgeSandbox();
     await logIntegration(ctx, {
       adapter: "pencom_sandbox",
       operation: "validate_pension_pin",

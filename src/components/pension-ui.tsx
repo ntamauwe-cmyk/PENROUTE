@@ -155,11 +155,11 @@ export function StatTile({
 
 /** Employer + live dashboard data shared across all menu pages. */
 export function useEmployer() {
-  const dash = useQuery(api.pension.getEmployerDashboard) as any;
+  const dash = useQuery(api.pension.getEmployerDashboard);
   return {
     dash,
     employer: dash?.employer ?? null,
-    batches: (dash?.batches ?? []) as any[],
+    batches: dash?.batches ?? [],
     loading: dash === undefined,
     needsSeed: dash !== undefined && !dash?.employer,
   };

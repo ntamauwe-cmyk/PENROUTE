@@ -8,7 +8,7 @@ import {
   Printer,
   ShieldCheck,
 } from "lucide-react";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
+import type { Doc } from "@/convex/_generated/dataModel";
 import {
   downloadCsv,
   fmtDate,

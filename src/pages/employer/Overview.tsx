@@ -16,7 +16,6 @@ import { ContributionWizard } from "@/components/ContributionWizard";
 import { DashboardShell } from "@/components/DashboardShell";
 import { LoadingBlock, StatTile, StatusPill, useEmployer } from "@/components/pension-ui";
 import {
-  ArrowRight,
   CheckCircle2,
   FileText,
   Landmark,
@@ -43,18 +42,18 @@ export default function Overview() {
   const detail = useQuery(
     api.pension.getBatchDetail,
     receiptBatchId ? { batchId: receiptBatchId } : "skip",
-  ) as any;
+  );
   const seed = useMutation(api.pension.seedDemoData);
   const claim = useMutation(api.pension.claimDemoEmployer);
   const syncPfas = useMutation(api.pension.syncPfaDirectory);
   const [seeding, setSeeding] = useState(false);
 
   const latest = batches[0] ?? null;
-  const pfaNameById = useMemo(() => new Map(pfas.map((p: any) => [p._id, p.name])), [pfas]);
+  const pfaNameById = useMemo(() => new Map(pfas.map((p) => [p._id, p.name])), [pfas]);
   const stats = dash?.stats ?? { completed: 0, processing: 0, failed: 0 };
   const pendingTotal = batches
-    .filter((b: any) => b.status === "awaiting_payment" || b.status === "processing")
-    .reduce((s: number, b: any) => s + b.totalDebit, 0);
+    .filter((b) => b.status === "awaiting_payment" || b.status === "processing")
+    .reduce((s, b) => s + b.totalDebit, 0);
 
   const ensureSeed = async () => {
     setSeeding(true);
@@ -280,9 +279,10 @@ export default function Overview() {
               </tr>
             </thead>
             <tbody>
-              {batches.map((b: any) => {
+              {batches.map((b) => {
+                // Legacy per-batch PFA list — optional on the doc (may be absent).
                 const pfasForBatch = new Set(
-                  (b.pfaCodes as string[] | undefined) ?? [],
+                  (b as typeof b & { pfaCodes?: string[] }).pfaCodes ?? [],
                 );
                 return (
                   <tr key={b._id} className="border-t border-[#EDF0F2]">
@@ -335,7 +335,7 @@ export default function Overview() {
           PFAs receiving contributions
         </h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {pfas.map((p: any) => (
+          {pfas.map((p) => (
             <div key={p._id} className="pen-tile p-4">
               <div className="flex items-center gap-2">
                 <Landmark className="size-4 text-[#007A4D]" />
@@ -384,7 +384,7 @@ export default function Overview() {
             <PaymentReceipt
               batch={detail.batch}
               employer={employer}
-              records={detail.records.filter((r: any) => r.validationStatus === "valid")}
+              records={detail.records.filter((r) => r.validationStatus === "valid")}
               settlements={detail.settlements}
             />
           ) : (
@@ -434,7 +434,7 @@ function PfaSubmissionSummary({
   batchId: Id<"contributionBatches">;
   pfaNameById: Map<Id<"pfas">, string>;
 }) {
-  const detail = useQuery(api.pension.getBatchDetail, { batchId }) as any;
+  const detail = useQuery(api.pension.getBatchDetail, { batchId });
   if (!detail) {
     return (
       <div className="pen-tile flex items-center gap-2 p-4 text-sm text-[#5A6B74]">
@@ -442,8 +442,8 @@ function PfaSubmissionSummary({
       </div>
     );
   }
-  const settlements: any[] = detail.settlements ?? [];
-  const acks: any[] = detail.pfaAcks ?? [];
+  const settlements = detail.settlements ?? [];
+  const acks = detail.pfaAcks ?? [];
   const ackBySettlement = new Map(acks.map((a) => [a.settlementId, a]));
 
   if (settlements.length === 0) {
@@ -462,18 +462,18 @@ function PfaSubmissionSummary({
         </h3>
         <span className="text-xs text-[#5A6B74]">
           {settlements.length} PFAs ·{" "}
-          {settlements.reduce((s: number, x: any) => s + x.employeeCount, 0)} employees routed
+          {settlements.reduce((s, x) => s + x.employeeCount, 0)} employees routed
         </span>
       </div>
       {settlements.length > 0 && (
         <p className="mb-3 rounded border border-[#D4AF37]/30 bg-[#F5EFD9] px-3 py-2 text-xs font-semibold leading-relaxed text-[#7A6412]">
-          {settlements.every((s: any) => s.pfaMode === "live_api")
+          {settlements.every((s) => s.pfaMode === "live_api")
             ? "Live PFA integration — statuses reflect external PFA confirmations."
             : "Sandbox mode — settlement and PFA acknowledgement statuses below are simulated test results, not externally confirmed settlements."}
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {settlements.map((s: any) => {
+        {settlements.map((s) => {
           const ack = ackBySettlement.get(s._id);
           return (
             <div key={s._id} className="pen-tile p-4">

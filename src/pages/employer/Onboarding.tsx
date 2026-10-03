@@ -19,7 +19,7 @@ export default function Onboarding() {
   const register = useMutation(api.pension.registerEmployer);
   const seed = useMutation(api.pension.seedDemoData);
   const claim = useMutation(api.pension.claimDemoEmployer);
-  const dash = useQuery(api.pension.getEmployerDashboard) as any;
+  const dash = useQuery(api.pension.getEmployerDashboard);
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -78,7 +78,7 @@ export default function Onboarding() {
         <div className="pen-card flex items-center gap-3 p-4 text-sm">
           <CheckCircle2 className="size-5 text-[#007A4D]" />
           <p>
-            You're currently working in <strong>{dash.employer.name}</strong>. Registering a new
+            You're currently working in <strong>{dash?.employer?.name}</strong>. Registering a new
             company switches your account to that new workspace.
           </p>
         </div>
