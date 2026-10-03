@@ -3,7 +3,8 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getCurrentEmployer, getEmployerForUser } from "./employers";
-import { PFA_SEED, applyPfaSeed, isSelectable } from "./pfaDirectory";
+import { quoteForPostings } from "./pricing";
+import { applyPfaSeed, isSelectable } from "./pfaDirectory";
 
 // ============================================================================
 // PFA DIRECTORY — licensed Pension Fund Administrators in Nigeria
@@ -264,15 +265,16 @@ export const getAdminOverview = query({
   },
 });
 
-/** Fee configuration (Fee Engine). */
+/**
+ * Legacy compatibility shim — the per-posting rate is derived from the
+ * CENTRAL pricing engine (pricing.ts). Kept so older callers keep working;
+ * new code should use pricing.getQuote (which also returns the tier).
+ */
 export const getFeeConfig = query({
   args: {},
   handler: async (ctx) => {
-    const row = await ctx.db
-      .query("systemConfig")
-      .withIndex("by_key", (q) => q.eq("key", "per_employee_fee_kobo"))
-      .first();
-    return row?.value ?? 900; // default ₦9
+    const quote = await quoteForPostings(ctx, 1);
+    return quote.feePerPostingKobo;
   },
 });
 
@@ -527,13 +529,8 @@ export const seedDemoData = mutation({
       });
     }
 
-    // Fee config: ₦9 per employee credit
-    await ctx.db.insert("systemConfig", {
-      key: "per_employee_fee_kobo",
-      value: 900,
-      updatedAt: now,
-      updatedBy: "system-default",
-    });
+    // NOTE: processing-fee pricing is centralised in the pricing service
+    // (pricing.ts / src/lib/pricing.ts) — no flat-fee key is seeded here.
 
     await ctx.db.insert("auditLogs", {
       actor: user?.email ?? "system",

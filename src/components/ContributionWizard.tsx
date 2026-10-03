@@ -63,7 +63,6 @@ export function ContributionWizard({ onDone }: Props) {
 
   const roster = useQuery(api.contributions.getReadyEmployees, { year, month });
   const pfas = useQuery(api.pension.listPfas) ?? [];
-  const feeConfig = useQuery(api.pension.getFeeConfig);
   const pfaCodeById = useMemo(() => new Map(pfas.map((p) => [p._id, p.code])), [pfas]);
   const pfaNameById = useMemo(() => new Map(pfas.map((p) => [p._id, p.name])), [pfas]);
 
@@ -77,6 +76,11 @@ export function ContributionWizard({ onDone }: Props) {
   | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Server-computed pricing quote from the central pricing engine — the rate
+  // is never hard-coded in the UI.
+  const previewPostings = Math.max(uploadedRows?.length ?? roster?.employees?.length ?? 0, 1);
+  const feeQuote = useQuery(api.pricing.getQuote, { postings: previewPostings });
 
   const parseScheduleCsv = (text: string) => {
     setUploadError(null);
@@ -165,9 +169,9 @@ export function ContributionWizard({ onDone }: Props) {
   const employeeSumN = prepared.reduce((s, r) => s + r.employeeContribution, 0);
   const employerSumN = prepared.reduce((s, r) => s + r.employerContribution, 0);
   const pensionTotalN = employeeSumN + employerSumN;
-  // Fee Engine: the per-employee fee is admin-configurable (never hard-coded).
-  // While the config loads, mirror the ₦9 default so the preview stays honest.
-  const feePerEmployeeN = (feeConfig ?? 900) / 100;
+  // Pricing engine: per-posting rate comes from the server-side quote
+  // (admin-configured tiers) — never a hard-coded number.
+  const feePerEmployeeN = (feeQuote?.feePerPostingKobo ?? 0) / 100;
   const feeN = totalRecords * feePerEmployeeN;
 
   // PFA distribution preview (step 04) — computed from the validated roster
@@ -574,9 +578,10 @@ export function ContributionWizard({ onDone }: Props) {
           <div className="mt-5 flex flex-col gap-4 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm">
               <p className="font-semibold text-[#0B1F2A]">
-                Penroute fee: {fmtNaira(feeN * 100)}{" "}
+                Penroute processing fee: {fmtNaira(feeN * 100)}{" "}
                 <span className="font-normal text-[#5A6B74]">
-                  ({totalRecords} × ₦{feePerEmployeeN % 1 === 0 ? feePerEmployeeN : feePerEmployeeN.toFixed(2)})
+                  ({totalRecords} × ₦{feePerEmployeeN % 1 === 0 ? feePerEmployeeN : feePerEmployeeN.toFixed(2)}
+                  {feeQuote ? ` · ${feeQuote.tierLabel}` : ""})
                 </span>
               </p>
               <p className="text-lg font-bold tabular-nums text-[#0B1F2A]">

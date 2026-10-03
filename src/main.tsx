@@ -28,6 +28,9 @@ const AuditTrail = lazy(() => import("./pages/employer/AuditTrail.tsx"));
 const Settings = lazy(() => import("./pages/employer/Settings.tsx"));
 const Onboarding = lazy(() => import("./pages/employer/Onboarding.tsx"));
 const AdminConsole = lazy(() => import("./pages/employer/AdminConsole.tsx"));
+const Billing = lazy(() => import("./pages/employer/Billing.tsx"));
+const AdminPricing = lazy(() => import("./pages/employer/AdminPricing.tsx"));
+const AdminRevenue = lazy(() => import("./pages/employer/AdminRevenue.tsx"));
 const PfaPortal = lazy(() => import("./pages/pfa/PfaPortal.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
@@ -266,6 +269,30 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <AdminConsole />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/dashboard/billing"
+                element={
+                  <RequireAuth>
+                    <Billing />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin/pricing"
+                element={
+                  <RequireAuth>
+                    <AdminPricing />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin/revenue"
+                element={
+                  <RequireAuth>
+                    <AdminRevenue />
                   </RequireAuth>
                 }
               />

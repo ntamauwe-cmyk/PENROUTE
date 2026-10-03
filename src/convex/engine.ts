@@ -11,18 +11,14 @@ import {
   settlementRailSandboxSubmit,
   pfaAcknowledgeSandbox,
 } from "./adapters";
+import { quoteForPostings } from "./pricing";
+import { markChargeFailed, markChargePaid, syncBillingCharge } from "./billing";
 
 // ============================================================================
-// FEE ENGINE — configurable, never hard-coded (spec §3, §23)
+// FEE ENGINE — pricing is centralised in the pricing service (pricing.ts) and
+// the shared engine (src/lib/pricing.ts). Rates are administrator-configured
+// tiers; nothing about pricing is hard-coded in this flow.
 // ============================================================================
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getPerEmployeeFee(ctx: any): Promise<number> {
-  const row = await ctx.db
-    .query("systemConfig")
-    .withIndex("by_key", (q: any) => q.eq("key", "per_employee_fee_kobo"))
-    .first();
-  return row?.value ?? 900; // ₦9 default
-}
 
 /** Read a numeric system flag (e.g. rail_mode) — configuration over code. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,7 +78,6 @@ export const getDraftSummary = query({
     const employer = await getEmployerForEngine(ctx, user);
     if (!employer) return null;
 
-    const feePerEmployee = await getPerEmployeeFee(ctx);
     const batches = await ctx.db
       .query("contributionBatches")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
@@ -101,7 +96,9 @@ export const getDraftSummary = query({
     const employeeSum = valid.reduce((s, r) => s + r.employeeContribution, 0);
     const employerSum = valid.reduce((s, r) => s + r.employerContribution, 0);
     const pension = employeeSum + employerSum;
-    const fee = valid.length * feePerEmployee;
+    const quote = await quoteForPostings(ctx, valid.length);
+    const feePerEmployee = quote.feePerPostingKobo;
+    const fee = quote.processingFeeKobo;
 
     return {
       batch,
@@ -112,6 +109,12 @@ export const getDraftSummary = query({
       pension,
       feePerEmployee,
       fee,
+      tier: {
+        code: quote.tier.code,
+        label: quote.tier.label,
+        minEmployees: quote.tier.minEmployees,
+        maxEmployees: quote.tier.maxEmployees,
+      },
       totalDebit: pension + fee,
       records: records.sort((a, b) => a.fullName.localeCompare(b.fullName)),
     };
@@ -449,11 +452,19 @@ export const payBatch = mutation({
     const valid = records.filter((r) => r.validationStatus === "valid");
     if (valid.length === 0) throw new Error("No valid records to pay");
 
-    const feePerEmployee = await getPerEmployeeFee(ctx);
     const employeeSum = valid.reduce((s, r) => s + r.employeeContribution, 0);
     const employerSum = valid.reduce((s, r) => s + r.employerContribution, 0);
     const pension = employeeSum + employerSum;
-    const fee = valid.length * feePerEmployee;
+    // Billing charge — the FIRST quote for this batch wins (idempotent
+    // snapshot): retries and later pricing changes never re-price it.
+    const charge = await syncBillingCharge(ctx, {
+      batch,
+      postingCount: valid.length,
+      contributionKobo: pension,
+      actor: user.email ?? "unknown",
+    });
+    const feePerEmployee = charge.feePerPostingKobo;
+    const fee = charge.processingFeeKobo;
     const totalDebit = pension + fee;
 
     const paymentRef = randRef("PMT", 8);
@@ -537,7 +548,10 @@ export const payBatch = mutation({
       success: railResult.accepted,
       batchId,
     });
-    if (!railResult.accepted) throw new Error("Payment rail declined the collection");
+    if (!railResult.accepted) {
+      await markChargeFailed(ctx, batchId);
+      throw new Error("Payment rail declined the collection");
+    }
 
     const paymentId = await ctx.db.insert("payments", {
       batchId,
@@ -612,7 +626,7 @@ async function recordSuccessfulPayment(
       pfaId: g.pfaId as Id<"pfas"> | undefined,
       narration: `Pension allocation → PFA ${g.pfaCode} (${g.count} employees)`,
     })),
-    { account: "platform_revenue", debit: 0, credit: fee, pfaId: undefined, narration: `Processing fee ${opts.valid.length} × ₦${(opts.feePerEmployee / 100).toFixed(0)}` },
+    { account: "platform_revenue", debit: 0, credit: fee, pfaId: undefined, narration: `Penroute processing fee ${opts.valid.length} × ₦${(opts.feePerEmployee / 100).toFixed(2)} (technology/service charge — not a pension contribution)` },
     { account: "clearing", debit: 0, credit: pension, pfaId: undefined, narration: `Pension clearing ${opts.paymentRef}` },
     { account: "clearing", debit: pension, credit: 0, pfaId: undefined, narration: `Pension clearing offset ${opts.paymentRef}` },
   ];
@@ -669,6 +683,9 @@ async function recordSuccessfulPayment(
     payload: JSON.stringify({ paymentRef: opts.paymentRef, amountKobo: totalDebit, rail: opts.rail }),
   });
 
+  // Recognise the billing charge as revenue only now that payment is confirmed.
+  await markChargePaid(ctx, { batchId: opts.batchId, paymentRef: opts.paymentRef });
+
   return { pension, fee, totalDebit };
 }
 
@@ -707,6 +724,7 @@ export const markLivePaymentFailed = mutation({
 
     await ctx.db.patch(payment._id, { status: "failed", failureReason: reason });
     await ctx.db.patch(batchId, { paymentStatus: "failed" });
+    await markChargeFailed(ctx, batchId);
     await ctx.db.insert("exceptions", {
       batchId,
       employerId: employer._id,
@@ -771,7 +789,14 @@ export const finalizeLivePaymentSystem = internalMutation({
       .withIndex("by_batch", (q) => q.eq("batchId", payment.batchId))
       .collect();
     const valid = records.filter((r) => r.validationStatus === "valid");
-    const feePerEmployee = await getPerEmployeeFee(ctx);
+    const pensionKobo = valid.reduce((s, r) => s + r.totalAmount, 0);
+    const charge = await syncBillingCharge(ctx, {
+      batch,
+      postingCount: valid.length,
+      contributionKobo: pensionKobo,
+      actor: "paystack-webhook",
+    });
+    const feePerEmployee = charge.feePerPostingKobo;
 
     await recordSuccessfulPayment(ctx, {
       batchId: payment.batchId,
@@ -798,6 +823,7 @@ export const markLivePaymentFailedSystem = internalMutation({
 
     await ctx.db.patch(paymentId, { status: "failed", failureReason: reason });
     await ctx.db.patch(payment.batchId, { paymentStatus: "failed" });
+    await markChargeFailed(ctx, payment.batchId);
     await ctx.db.insert("exceptions", {
       batchId: payment.batchId,
       employerId: payment.employerId,
@@ -854,7 +880,14 @@ export const finalizeLivePayment = mutation({
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
       .collect();
     const valid = records.filter((r) => r.validationStatus === "valid");
-    const feePerEmployee = await getPerEmployeeFee(ctx);
+    const pensionKobo = valid.reduce((s, r) => s + r.totalAmount, 0);
+    const charge = await syncBillingCharge(ctx, {
+      batch,
+      postingCount: valid.length,
+      contributionKobo: pensionKobo,
+      actor: user.email ?? "unknown",
+    });
+    const feePerEmployee = charge.feePerPostingKobo;
 
     await recordSuccessfulPayment(ctx, {
       batchId,

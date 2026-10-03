@@ -10,19 +10,35 @@ export default function Transactions() {
   const { batches } = useEmployer();
 
   const batchRefById = new Map(batches.map((b: any) => [b._id, b.batchRef]));
+  const reconByBatch = new Map<string, string>(
+    batches.map((b: { _id: string; reconciliationStatus: string }) => [
+      b._id,
+      b.reconciliationStatus,
+    ]),
+  );
 
   return (
     <DashboardShell>
       <PageHeader
         title="Transactions"
-        description="Your consolidated payments — one payment per monthly batch, with fee and pension split."
+        description="Consolidated payments — pension contributions routed to PFAs are shown separately from Penroute's processing fee (a technology/service charge, not a pension contribution)."
       />
 
       {!payments ? (
         <LoadingBlock label="Loading transactions…" />
       ) : (
         <ClayTable
-          headers={["Payment ref", "Batch", "Amount", "Pension portion", "Platform fee", "Rail", "Status", "Initiated"]}
+          headers={[
+            "Payment ref",
+            "Batch",
+            "Total Processed",
+            "Pension Contribution",
+            "Penroute Processing Fee",
+            "Rail",
+            "Processing Status",
+            "Reconciliation Status",
+            "Initiated",
+          ]}
           isEmpty={payments.length === 0}
           emptyMessage="No transactions yet — payments appear here after your first contribution."
         >
@@ -49,6 +65,9 @@ export default function Transactions() {
               </td>
               <td className="px-3 py-2.5">
                 <StatusPill status={p.status} />
+              </td>
+              <td className="px-3 py-2.5">
+                <StatusPill status={reconByBatch.get(p.batchId) ?? "pending"} />
               </td>
               <td className="px-3 py-2.5 text-muted-foreground">{fmtDateTime(p.initiatedAt)}</td>
             </tr>

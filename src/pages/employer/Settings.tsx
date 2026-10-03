@@ -29,7 +29,7 @@ import { toast } from "sonner";
 
 export default function Settings() {
   const { employer, loading } = useEmployer();
-  const feeKobo = useQuery(api.pension.getFeeConfig);
+  const pricing = useQuery(api.pricing.getPublicPricing);
   const keyStatus = useQuery(api.employers.getApiKeysStatus);
 
   if (loading) {
@@ -111,19 +111,32 @@ export default function Settings() {
       <section className="pen-card-lg p-6">
         <h2 className="font-bold tracking-tight">Platform pricing</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Configurable by platform administrators — never hard-coded.
+          Processing-fee tiers configured centrally by platform administrators —
+          never hard-coded. Your applicable rate is set by your employee posting
+          volume.
         </p>
-        <div className="pen-card mt-4 flex items-center justify-between p-4">
-          <div>
-            <p className="text-sm font-semibold">Per-employee processing fee</p>
-            <p className="text-xs text-muted-foreground">
-              Charged on each employee contribution credit successfully processed
-            </p>
-          </div>
-          <p className="text-2xl font-bold tabular-nums">
-            {feeKobo === undefined ? "—" : `₦${(feeKobo / 100).toFixed(0)}`}
-          </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {(pricing?.tiers ?? []).map((t) => (
+            <div key={t.code} className="pen-card flex items-center justify-between p-4">
+              <div>
+                <p className="text-sm font-semibold">{t.label}</p>
+                <p className="text-xs text-muted-foreground">Per employee posting</p>
+              </div>
+              <p className="text-xl font-bold tabular-nums">
+                {pricing === undefined ? "—" : fmtNaira(t.feePerPostingKobo)}
+              </p>
+            </div>
+          ))}
+          {pricing === undefined && (
+            <div className="pen-card flex items-center justify-center p-4 text-sm text-muted-foreground">
+              Loading pricing…
+            </div>
+          )}
         </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Penroute processing fees are technology/service charges — separate from
+          your employees' pension contributions.
+        </p>
       </section>
 
       {/* Integration status */}

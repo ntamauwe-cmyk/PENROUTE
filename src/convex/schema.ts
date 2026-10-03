@@ -313,7 +313,8 @@ const schema = defineSchema(
       createdAt: v.number(),
     })
       .index("by_batch", ["batchId"])
-      .index("by_employer", ["employerId"]),
+      .index("by_employer", ["employerId"])
+      .index("by_entity", ["entityType", "createdAt"]),
 
     // Sandbox/production adapter call log (PFA + PENCOM adapters)
     integrationLogs: defineTable({
@@ -355,6 +356,102 @@ const schema = defineSchema(
     })
       .index("by_email", ["email"])
       .index("by_status", ["status"]),
+
+    // ------------------------------------------------------------------
+    // PRICING — administrator-managed processing-fee tiers. Rows are
+    // versioned: a rate/range change CLOSES the old row (effectiveTo) and
+    // inserts a successor, so pricing history is always recoverable and a
+    // completed billing record's snapshot is never rewritten.
+    // ------------------------------------------------------------------
+    pricingTiers: defineTable({
+      code: v.string(), // stable tier code shared across versions
+      label: v.string(), // e.g. "201–1,000 employees"
+      minEmployees: v.number(),
+      maxEmployees: v.optional(v.number()), // omitted = open-ended (10,001+)
+      feePerPostingKobo: v.number(), // Penroute processing fee per posting
+      active: v.boolean(),
+      effectiveFrom: v.number(),
+      effectiveTo: v.optional(v.number()), // set when superseded/deactivated
+      createdAt: v.number(),
+      createdBy: v.optional(v.string()),
+      updatedAt: v.optional(v.number()),
+    })
+      .index("by_code", ["code"])
+      .index("by_active", ["active"]),
+
+    // Optional employer platform subscription plans (admin-configurable;
+    // employers are NOT subscribed automatically — assignment is explicit).
+    subscriptionPlans: defineTable({
+      code: v.string(), // starter | business | enterprise | custom
+      name: v.string(),
+      monthlyPriceKobo: v.number(),
+      priceIsFrom: v.boolean(), // true → "From ₦75,000/month"
+      description: v.optional(v.string()),
+      active: v.boolean(),
+      createdAt: v.number(),
+      createdBy: v.optional(v.string()),
+      updatedAt: v.optional(v.number()),
+    })
+      .index("by_code", ["code"])
+      .index("by_active", ["active"]),
+
+    // Explicit employer → plan assignments. Price is SNAPSHOT at assignment
+    // so historical billing periods never change retroactively.
+    employerSubscriptions: defineTable({
+      employerId: v.id("employers"),
+      planCode: v.string(),
+      planName: v.string(),
+      monthlyPriceKobo: v.number(), // snapshot
+      status: v.string(), // active | cancelled
+      startedAt: v.number(),
+      endedAt: v.optional(v.number()),
+      createdAt: v.number(),
+      createdBy: v.optional(v.string()),
+    })
+      .index("by_employer", ["employerId"])
+      .index("by_status", ["status"]),
+
+    // ------------------------------------------------------------------
+    // BILLING — one immutable-priced charge per contribution batch. The
+    // pricing snapshot (tier + fee per posting) is written ONCE when the
+    // batch is first quoted and never rewritten by later pricing changes.
+    // Pension contributions are recorded here strictly for reconciliation —
+    // only processingFee/subscription amounts are Penroute revenue.
+    // ------------------------------------------------------------------
+    billingCharges: defineTable({
+      batchId: v.id("contributionBatches"), // unique per charge — idempotency
+      employerId: v.id("employers"),
+      periodKey: v.string(), // "YYYY-MM"
+      contributionYear: v.number(),
+      contributionMonth: v.number(),
+      postingCount: v.number(), // billable postings (valid contribution records)
+      employeeHeadcount: v.number(), // roster size at quote time (informational)
+      tierCode: v.string(),
+      tierLabel: v.string(),
+      tierMin: v.number(),
+      tierMax: v.optional(v.number()),
+      feePerPostingKobo: v.number(), // SNAPSHOT — immutable after quote
+      processingFeeKobo: v.number(), // postingCount × feePerPosting
+      contributionKobo: v.number(), // pension funds — NOT Penroute revenue
+      subscriptionFeeKobo: v.number(), // period subscription (0 when none)
+      totalChargeKobo: v.number(), // processing + subscription (Penroute service charge)
+      totalProcessedKobo: v.number(), // pension + processing fee (total debited)
+      transactionRef: v.string(), // immutable billing reference
+      paymentRef: v.optional(v.string()),
+      // pending | paid | failed | reversed — revenue counts PAID only
+      status: v.string(),
+      recognizedAt: v.optional(v.number()), // when it became revenue
+      reversedAt: v.optional(v.number()),
+      reversalReason: v.optional(v.string()),
+      reconciliationStatus: v.string(), // pending | reconciled | exception
+      createdAt: v.number(),
+      createdBy: v.optional(v.string()),
+    })
+      .index("by_batch", ["batchId"])
+      .index("by_employer", ["employerId"])
+      .index("by_period", ["periodKey"])
+      .index("by_status", ["status"])
+      .index("by_ref", ["transactionRef"]),
 
     // ------------------------------------------------------------------
     // GitHub sync — staged files for committing the project source to the

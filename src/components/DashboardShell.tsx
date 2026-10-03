@@ -4,11 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Logo, PenrouteSymbol } from "@/components/Brand";
 import { api } from "@/convex/_generated/api";
 import {
+  BarChart3,
   Building2,
+  CreditCard,
   Landmark,
   LayoutDashboard,
   LineChart,
   type LucideIcon,
+  Receipt,
   ScrollText,
   ShieldCheck,
   Users,
@@ -29,9 +32,13 @@ const EMPLOYER_NAV: NavItem[] = [
   { to: "/dashboard/reconciliation", label: "Reconciliation", icon: ShieldCheck, group: "Workspace" },
   { to: "/dashboard/statements", label: "Reports", icon: LineChart, group: "Workspace" },
   { to: "/dashboard/audit", label: "Audit Logs", icon: ScrollText, group: "Control" },
+  { to: "/dashboard/billing", label: "Billing", icon: CreditCard, group: "Control" },
   { to: "/dashboard/settings", label: "Settings", icon: ShieldCheck, group: "Control" },
   { to: "/onboarding", label: "Register company", icon: Users, group: "Control" },
+  // Administrator-only pricing & revenue (filtered out for non-admins below).
   { to: "/admin", label: "Admin console", icon: ShieldCheck, group: "Control" },
+  { to: "/admin/pricing", label: "Pricing", icon: Receipt, group: "Control" },
+  { to: "/admin/revenue", label: "Revenue", icon: BarChart3, group: "Control" },
 ];
 
 // PFA-portal navigation — only ever shows this operator's own scoped pages.
@@ -55,7 +62,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const isPfa = user?.role === "pfa";
   const home = isPfa ? "/pfa" : "/dashboard";
   const navItems = (isPfa ? PFA_NAV : EMPLOYER_NAV).filter(
-    (item) => item.to !== "/admin" || user?.role === "admin",
+    (item) => !item.to.startsWith("/admin") || user?.role === "admin",
   );
 
   const handleSignOut = async () => {
