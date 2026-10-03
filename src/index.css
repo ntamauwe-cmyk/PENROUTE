@@ -1,10 +1,9 @@
 /* DO NOT CHANGE */
+/* Montserrat — Penroute brand typeface */
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @custom-variant dark (&:is(.dark *));
-
-/* Montserrat — the Penroute brand typeface (headings, body, figures) */
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap");
 
 /* DO NOT CHANGE */
 @theme inline {
@@ -558,4 +557,29 @@
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+
+/* Brand-wide finishing layer: visual-only refinements for existing screens */
+@layer base {
+  body { min-width: 320px; }
+  ::placeholder { color: #91a0a8; opacity: 1; }
+  :focus-visible { outline-color: #00c896; }
+}
+@layer components {
+  [data-slot="card"] { overflow-wrap: anywhere; }
+  [data-slot="table-container"] { border: 1px solid var(--border); border-radius: 0.8rem; background: #fff; }
+  [data-slot="table"] thead { background: #f5f8f7; }
+  [data-slot="table"] th { color: #52656f; font-size: .68rem; font-weight: 700; letter-spacing: .055em; }
+  [data-slot="table"] tbody tr { transition: background-color .16s ease; }
+  [data-slot="table"] tbody tr:hover { background-color: #f7fbf9; }
+  [data-slot="input"]:hover, [data-slot="textarea"]:hover, [data-slot="select-trigger"]:hover { border-color: #b7d9cc; }
+  [data-slot="button"]:focus-visible, [data-slot="input"]:focus-visible, [data-slot="textarea"]:focus-visible { outline: 2px solid #00c896; outline-offset: 2px; }
+  .pen-page-header + * { margin-top: .25rem; }
+  .pen-metric { isolation: isolate; }
+  .pen-navy { isolation: isolate; }
+}
+@media (max-width: 639px) {
+  [data-slot="table-container"] { max-width: 100%; overflow-x: auto; }
+  .pen-card, .pen-card-lg, [data-slot="card"] { border-radius: .8rem; }
 }
