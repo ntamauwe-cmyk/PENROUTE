@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated, user } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -23,6 +23,12 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         replace
       />
     );
+  }
+
+  // PFA-portal users only ever belong inside /pfa — bounce them out of the
+  // employer/admin workspace (their queries return no employer data anyway).
+  if (user?.role === "pfa" && !location.pathname.startsWith("/pfa")) {
+    return <Navigate to="/pfa" replace />;
   }
 
   return children;

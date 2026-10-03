@@ -28,6 +28,7 @@ const AuditTrail = lazy(() => import("./pages/employer/AuditTrail.tsx"));
 const Settings = lazy(() => import("./pages/employer/Settings.tsx"));
 const Onboarding = lazy(() => import("./pages/employer/Onboarding.tsx"));
 const AdminConsole = lazy(() => import("./pages/employer/AdminConsole.tsx"));
+const PfaPortal = lazy(() => import("./pages/pfa/PfaPortal.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions — brand mark, no spinners on the logo
@@ -265,6 +266,54 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <AdminConsole />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/pfa"
+                element={
+                  <RequireAuth>
+                    <PfaPortal section="home" />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/pfa/settlements"
+                element={
+                  <RequireAuth>
+                    <PfaPortal section="settlements" />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/pfa/contributions"
+                element={
+                  <RequireAuth>
+                    <PfaPortal section="contributions" />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/pfa/employees"
+                element={
+                  <RequireAuth>
+                    <PfaPortal section="employees" />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/pfa/employers"
+                element={
+                  <RequireAuth>
+                    <PfaPortal section="employers" />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/pfa/exceptions"
+                element={
+                  <RequireAuth>
+                    <PfaPortal section="exceptions" />
                   </RequireAuth>
                 }
               />

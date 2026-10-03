@@ -16,6 +16,10 @@ export const emailOtp = Email({
     return generateRandomString(random, alphabet, 6);
   },
   async sendVerificationRequest({ identifier: email, token }) {
+    // Platform-provided relay key. Overridable via the Keys tab
+    // (EMAIL_OTP_API_KEY) so it can be rotated without a code change;
+    // the built-in value keeps OTP sign-in working when unset.
+    const apiKey = process.env.EMAIL_OTP_API_KEY || "fb_email_2crN1hqIArZP2bEfvjp5Qik4";
     try {
       await axios.post(
         "https://auth.freebuff.app/send_otp",
@@ -26,7 +30,7 @@ export const emailOtp = Email({
         },
         {
           headers: {
-            "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4",
+            "x-api-key": apiKey,
           },
         },
       );

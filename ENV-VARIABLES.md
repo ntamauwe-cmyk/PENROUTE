@@ -21,6 +21,7 @@ and fill in your own values if you self-host.
 | `VLY_INTEGRATION_BASE_URL` | Freebuff integration gateway base URL (injected by the platform) |
 | `VLY_CONVEX_AUTH_ISSUER` | Freebuff federated-auth issuer (injected by the platform) |
 | `VLY_APP_NAME` | App name used in OTP emails (injected by the platform) |
+| `EMAIL_OTP_API_KEY` | Optional override for the Freebuff email-OTP relay key used by `auth/emailOtp.ts`. Leave unset to use the built-in platform key; set it in the Keys tab to rotate the relay key without a code change |
 | `VITE_VLY_APP_ID` / `VITE_VLY_MONITORING_URL` | Freebuff preview/error monitoring (injected by the platform) |
 
 ## PFA live integrations

@@ -7,12 +7,16 @@ export const ROLES = {
   ADMIN: "admin",
   USER: "user",
   MEMBER: "member",
+  // PFA portal users: issued by an administrator and linked to exactly one
+  // PFA via `users.pfaId`. They only ever see their own PFA's data.
+  PFA: "pfa",
 } as const;
 
 export const roleValidator = v.union(
   v.literal(ROLES.ADMIN),
   v.literal(ROLES.USER),
   v.literal(ROLES.MEMBER),
+  v.literal(ROLES.PFA),
 );
 export type Role = Infer<typeof roleValidator>;
 
@@ -332,6 +336,25 @@ const schema = defineSchema(
       status: v.string(),
       createdAt: v.number(),
     }).index("by_batch", ["batchId"]),
+
+    // ------------------------------------------------------------------
+    // PFA portal access grants — administrator-issued invitations. A grant
+    // records "this email may act for this PFA" BEFORE the person has an
+    // account; it is claimed (role → "pfa", linked pfaId) on their first
+    // sign-in. Grants are the only path into the PFA portal — self-service
+    // sign-up never produces one.
+    // ------------------------------------------------------------------
+    pfaAccessGrants: defineTable({
+      email: v.string(), // normalized lowercase
+      pfaId: v.id("pfas"),
+      status: v.string(), // active | claimed | revoked
+      grantedBy: v.string(), // admin email
+      claimedAt: v.optional(v.number()),
+      revokedAt: v.optional(v.number()),
+      createdAt: v.number(),
+    })
+      .index("by_email", ["email"])
+      .index("by_status", ["status"]),
 
     // ------------------------------------------------------------------
     // GitHub sync — staged files for committing the project source to the

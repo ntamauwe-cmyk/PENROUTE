@@ -388,6 +388,13 @@ export default function Landing() {
             <br className="sm:hidden" />
             <span className="hidden sm:inline"> · </span>
             PENCOM/PFA connections run through clearly-labelled sandbox adapters.
+            <br />
+            <a
+              href="https://penroute.net"
+              className="font-semibold text-[#007A4D] hover:underline"
+            >
+              penroute.net
+            </a>
           </p>
         </div>
       </footer>

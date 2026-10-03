@@ -1,8 +1,29 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Loader2 } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { statusTone } from "@/lib/pension";
+import { Button } from "@/components/ui/button";
+
+/** CSV cell escaping — quotes commas, quotes and newlines. */
+function csvCell(value: string | number): string {
+  const s = String(value ?? "");
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Trigger a client-side CSV download (no server round-trip). */
+function downloadCsv(headers: string[], rows: (string | number)[][], name: string) {
+  const csv = [headers.map(csvCell).join(","), ...rows.map((r) => r.map(csvCell).join(","))].join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 const toneClasses: Record<string, string> = {
   green: "st-green", blue: "st-blue", violet: "st-violet",
@@ -89,7 +110,16 @@ export function ClayTable({
         <tbody>{children}</tbody>
       </table>
       {exportRows && exportName && (
-        <div className="p-2 no-print" />
+        <div className="flex items-center justify-end p-2 no-print">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs font-semibold"
+            onClick={() => downloadCsv(headers, exportRows, exportName)}
+          >
+            <Download className="mr-1.5 size-3.5" /> Export CSV
+          </Button>
+        </div>
       )}
     </div>
   );

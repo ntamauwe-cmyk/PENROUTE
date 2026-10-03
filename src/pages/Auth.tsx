@@ -7,8 +7,10 @@ import {
 } from "@/components/ui/input-otp";
 import { Logo, PenrouteSymbol, RouteLines } from "@/components/Brand";
 import { useAuth } from "@/hooks/use-auth";
+import { api } from "@/convex/_generated/api";
 import { ArrowRight, Building2, Loader2, Mail, ShieldCheck } from "lucide-react";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useMutation } from "convex/react";
 import { useNavigate, useSearchParams } from "react-router";
 
 interface AuthProps {
@@ -32,11 +34,30 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // PFA portal access: after sign-in we ask the backend whether this email
+  // holds an administrator-issued PFA grant. If so, it is claimed here and
+  // the person lands in /pfa instead of the employer workspace.
+  const claimAccess = useMutation(api.pfaPortal.claimAccess);
+  const redirecting = useRef(false);
+  const hasReturnTo = Boolean(searchParams.get("returnTo"));
+
   useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      navigate(redirect);
-    }
-  }, [authLoading, isAuthenticated, navigate, redirect]);
+    if (authLoading || !isAuthenticated || redirecting.current) return;
+    redirecting.current = true;
+    void (async () => {
+      let target = redirect;
+      try {
+        const res = await claimAccess({});
+        // Only steer a claimed PFA user when they didn't ask for a specific
+        // return path — explicit returnTo always wins (RequireAuth corrects
+        // non-/pfa destinations for PFA roles anyway).
+        if (res.claimed && !hasReturnTo) target = "/pfa";
+      } catch {
+        // Claiming is best-effort — fall back to the normal destination.
+      }
+      navigate(target, { replace: true });
+    })();
+  }, [authLoading, isAuthenticated, navigate, redirect, claimAccess, hasReturnTo]);
 
   const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -65,7 +86,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     try {
       const formData = new FormData(event.currentTarget);
       await signIn("email-otp", formData);
-      navigate(redirect);
+      // Navigation happens once PFA grant claiming settles (effect above).
     } catch (error) {
       console.error("OTP verification error:", error);
       setError("The verification code you entered is incorrect.");

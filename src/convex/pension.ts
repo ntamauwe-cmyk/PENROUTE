@@ -48,6 +48,10 @@ export const getEmployerDashboard = query({
     const user = await getCurrentUser(ctx);
     if (!user) return null;
 
+    // PFA-portal users have no employer workspace — they must never receive
+    // employer data (including the demo-employer fallback below).
+    if (user.role === "pfa") return null;
+
     // Employer resolution: user link first, then owner match.
     // Auto-claim of the demo employer happens in claimDemoEmployer (queries cannot mutate).
     let employer = user.employerId
@@ -183,10 +187,20 @@ export const listPfas = query({
   },
 });
 
-/** Contribution records for one PFA (PFA portal employee allocations view). */
+/** Contribution records for one PFA (PFA portal employee allocations view).
+ *  Authorized callers: administrators, and PFA users for their OWN PFA only —
+ *  pfaId is never trusted from the client without this check. */
 export const getPfaAllocations = query({
   args: { pfaId: v.id("pfas") },
   handler: async (ctx, { pfaId }) => {
+    const caller = await getCurrentUser(ctx);
+    if (!caller) throw new Error("Not authenticated");
+    if (
+      caller.role !== "admin" &&
+      (caller.role !== "pfa" || caller.pfaId !== pfaId)
+    ) {
+      throw new Error("Not authorized to view this PFA's allocations");
+    }
     const pfa = await ctx.db.get(pfaId);
     if (!pfa) return null;
 

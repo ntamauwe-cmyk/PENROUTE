@@ -2,7 +2,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useEmployer } from "@/components/pension-ui";
 import { Button } from "@/components/ui/button";
 import { Logo, PenrouteSymbol } from "@/components/Brand";
+import { api } from "@/convex/_generated/api";
 import {
+  Building2,
   Landmark,
   LayoutDashboard,
   LineChart,
@@ -12,40 +14,60 @@ import {
   Users,
 } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "convex/react";
 import { Link, useLocation, useNavigate } from "react-router";
-import { statusLabel } from "@/lib/pension";
 
-const NAV: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/dashboard/employees", label: "Employees", icon: Users },
-  { to: "/dashboard/batches", label: "Pension Payments", icon: Landmark },
-  { to: "/dashboard/transactions", label: "Transactions", icon: ScrollText },
-  { to: "/dashboard/pfas", label: "PFA Directory", icon: Landmark },
-  { to: "/dashboard/reconciliation", label: "Reconciliation", icon: ShieldCheck },
-  { to: "/dashboard/statements", label: "Reports", icon: LineChart },
-  { to: "/dashboard/audit", label: "Audit Logs", icon: ScrollText },
-  { to: "/dashboard/settings", label: "Settings", icon: ShieldCheck },
-  { to: "/onboarding", label: "Register company", icon: Users },
-  { to: "/admin", label: "Admin console", icon: ShieldCheck },
+type NavGroup = "Workspace" | "Control";
+type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; group: NavGroup };
+
+const EMPLOYER_NAV: NavItem[] = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true, group: "Workspace" },
+  { to: "/dashboard/employees", label: "Employees", icon: Users, group: "Workspace" },
+  { to: "/dashboard/batches", label: "Pension Payments", icon: Landmark, group: "Workspace" },
+  { to: "/dashboard/transactions", label: "Transactions", icon: ScrollText, group: "Workspace" },
+  { to: "/dashboard/pfas", label: "PFA Directory", icon: Landmark, group: "Workspace" },
+  { to: "/dashboard/reconciliation", label: "Reconciliation", icon: ShieldCheck, group: "Workspace" },
+  { to: "/dashboard/statements", label: "Reports", icon: LineChart, group: "Workspace" },
+  { to: "/dashboard/audit", label: "Audit Logs", icon: ScrollText, group: "Control" },
+  { to: "/dashboard/settings", label: "Settings", icon: ShieldCheck, group: "Control" },
+  { to: "/onboarding", label: "Register company", icon: Users, group: "Control" },
+  { to: "/admin", label: "Admin console", icon: ShieldCheck, group: "Control" },
+];
+
+// PFA-portal navigation — only ever shows this operator's own scoped pages.
+const PFA_NAV: NavItem[] = [
+  { to: "/pfa", label: "Overview", icon: LayoutDashboard, end: true, group: "Workspace" },
+  { to: "/pfa/settlements", label: "Settlements", icon: Landmark, group: "Workspace" },
+  { to: "/pfa/contributions", label: "Contributions", icon: ScrollText, group: "Workspace" },
+  { to: "/pfa/employees", label: "Members", icon: Users, group: "Workspace" },
+  { to: "/pfa/employers", label: "Employers", icon: Building2, group: "Control" },
+  { to: "/pfa/exceptions", label: "Exceptions", icon: ShieldCheck, group: "Control" },
 ];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
   const { employer } = useEmployer();
+  const pfaSession = useQuery(api.pfaPortal.getSession);
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const isPfa = user?.role === "pfa";
+  const home = isPfa ? "/pfa" : "/dashboard";
+  const navItems = (isPfa ? PFA_NAV : EMPLOYER_NAV).filter(
+    (item) => item.to !== "/admin" || user?.role === "admin",
+  );
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
   };
 
-  const isActive = (item: (typeof NAV)[number]) =>
+  const isActive = (item: NavItem) =>
     item.end ? location.pathname === item.to : location.pathname.startsWith(item.to);
 
-  const navLinks = (onClick?: () => void) =>
-    NAV.filter((item) => item.to !== "/admin" || user?.role === "admin").map((item) => {
+  const navLinks = (onClick?: () => void, group?: NavGroup) =>
+    navItems.filter((item) => !group || item.group === group).map((item) => {
       const Icon = item.icon;
       return (
         <Link
@@ -62,17 +84,34 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     });
 
   const initials = (user?.email ?? "?").slice(0, 2).toUpperCase();
+  const orgLine = isPfa
+    ? pfaSession?.pfa.name ?? "PFA portal"
+    : employer
+      ? `RC ${employer.rcNumber}`
+      : "No organisation";
 
   return (
     <div className="min-h-screen bg-background">
       {/* ===== Desktop navy sidebar (reference dashboard) ===== */}
       <aside className="pen-nav pen-sidebar-nav fixed inset-y-0 left-0 z-40 hidden w-64 flex-col lg:flex no-print">
         <div className="px-5 pb-5 pt-7">
-          <Link to="/dashboard" aria-label="Penroute" className="inline-block">
+          <Link to={home} aria-label="Penroute" className="inline-block">
             <Logo onDark tagline />
           </Link>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3"><div className="pen-sidebar-label">Workspace</div>{navLinks().slice(0, 7)}<div className="pen-brand-divider" /><div className="pen-sidebar-label">Control</div>{navLinks().slice(7)}</nav>
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3">
+          {(["Workspace", "Control"] as NavGroup[]).map((group, gi) => {
+            const groupLinks = navLinks(undefined, group);
+            if (groupLinks.length === 0) return null;
+            return (
+              <div key={group} className="contents">
+                {gi > 0 && <div className="pen-brand-divider" />}
+                <div className="pen-sidebar-label">{group}</div>
+                {groupLinks}
+              </div>
+            );
+          })}
+        </nav>
         <div className="border-t border-white/10 p-4">
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-bold text-white">
@@ -80,9 +119,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[15px] font-semibold text-white">{user?.email ?? "Guest"}</p>
-              <p className="truncate text-sm text-white/55">
-                {employer ? `RC ${employer.rcNumber}` : "No organisation"}
-              </p>
+              <p className="truncate text-sm text-white/55">{orgLine}</p>
             </div>
           </div>
           <Button
@@ -98,7 +135,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* ===== Mobile top bar — symbol-only mark at narrow widths ===== */}
       <header className="pen-nav pen-sidebar-nav sticky top-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden no-print">
-        <Link to="/dashboard" aria-label="Penroute" className="flex items-center">
+        <Link to={home} aria-label="Penroute" className="flex items-center">
           <PenrouteSymbol className="size-8" />
         </Link>
         <button
@@ -147,12 +184,19 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         aria-label="Primary"
       >
         {(
-          [
-            { to: "/dashboard", label: "Home", icon: LayoutDashboard, exact: true },
-            { to: "/dashboard/batches", label: "Payments", icon: Landmark, exact: false },
-            { to: "/dashboard/statements", label: "Reports", icon: LineChart, exact: false },
-            { to: "/dashboard/settings", label: "Profile", icon: Users, exact: false },
-          ] as { to: string; label: string; icon: typeof Landmark; exact: boolean }[]
+          isPfa
+            ? [
+                { to: "/pfa", label: "Home", icon: LayoutDashboard, exact: true },
+                { to: "/pfa/settlements", label: "Settlements", icon: Landmark, exact: false },
+                { to: "/pfa/contributions", label: "Credits", icon: ScrollText, exact: false },
+                { to: "/pfa/employees", label: "Members", icon: Users, exact: false },
+              ]
+            : [
+                { to: "/dashboard", label: "Home", icon: LayoutDashboard, exact: true },
+                { to: "/dashboard/batches", label: "Payments", icon: Landmark, exact: false },
+                { to: "/dashboard/statements", label: "Reports", icon: LineChart, exact: false },
+                { to: "/dashboard/settings", label: "Profile", icon: Users, exact: false },
+              ]
         ).map((t) => {
           const Icon = t.icon;
           const active = t.exact

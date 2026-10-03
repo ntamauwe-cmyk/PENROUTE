@@ -6,9 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DashboardShell } from "@/components/DashboardShell";
 import { ClayTable, LoadingBlock, PageHeader, StatTile, StatusPill } from "@/components/pension-ui";
 import { fmtDateTime, fmtNaira } from "@/lib/pension";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
   CheckCircle2,
   Database,
@@ -17,6 +25,7 @@ import {
   RefreshCw,
   ShieldCheck,
   TriangleAlert,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -66,6 +75,16 @@ function AdminConsoleBody() {
   const testConnection = useAction(api.pfaDispatch.testPfaConnection);
   const pfaIntegrations = useQuery(api.admin.adminListPfaIntegrations);
 
+  // PFA portal access provisioning (role "pfa")
+  const pfaAccess = useQuery(api.pfaPortal.adminListAccess);
+  const allPfas = useQuery(api.pension.listPfas);
+  const provisionPfaAccess = useMutation(api.pfaPortal.adminProvisionAccess);
+  const revokePfaGrant = useMutation(api.pfaPortal.adminRevokeGrant);
+  const unlinkPfaUser = useMutation(api.pfaPortal.adminUnlinkPfaUser);
+  const [pfaOperatorEmail, setPfaOperatorEmail] = useState("");
+  const [pfaOperatorPfaId, setPfaOperatorPfaId] = useState<string>("");
+  const [grantBusy, setGrantBusy] = useState(false);
+
   const [fee, setFee] = useState("");
   const [rail, setRail] = useState<{ mode: string; configured: boolean } | null>(null);
   const [checkingRail, setCheckingRail] = useState(false);
@@ -108,6 +127,36 @@ function AdminConsoleBody() {
       toast.error(e instanceof Error ? e.message : "Could not switch rail");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const grantPfaAccess = async () => {
+    if (!pfaOperatorEmail.trim()) {
+      toast.error("Enter the operator's email address");
+      return;
+    }
+    if (!pfaOperatorPfaId) {
+      toast.error("Select the PFA this operator belongs to");
+      return;
+    }
+    setGrantBusy(true);
+    try {
+      const res = await provisionPfaAccess({
+        email: pfaOperatorEmail.trim(),
+        pfaId: pfaOperatorPfaId as Id<"pfas">,
+      });
+      toast.success(
+        res.provisioned === "linked"
+          ? "Account linked to the PFA portal"
+          : res.provisioned === "invited"
+            ? "Invitation stored — activates on their first sign-in"
+            : "That email already has access to this PFA",
+      );
+      setPfaOperatorEmail("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not grant access");
+    } finally {
+      setGrantBusy(false);
     }
   };
 
@@ -268,6 +317,140 @@ function AdminConsoleBody() {
                     onTest={() => testConnection({ pfaId: p._id })}
                   />
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* PFA portal access — role "pfa" provisioning */}
+          <section className="pen-card-lg p-6">
+            <h2 className="flex items-center gap-2 font-bold tracking-tight">
+              <Users className="size-5 text-primary" /> PFA portal access
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Provision a Pension Fund Administrator operator. If the email already has a Penroute
+              account it is linked immediately; otherwise an invitation is stored and activated the
+              first time they sign in. PFA users only ever see their own PFA's data.
+            </p>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <div className="w-64">
+                <Label>Operator email</Label>
+                <Input
+                  className="mt-1.5"
+                  type="email"
+                  value={pfaOperatorEmail}
+                  onChange={(e) => setPfaOperatorEmail(e.target.value)}
+                  placeholder="operator@pfa.example"
+                />
+              </div>
+              <div className="w-64">
+                <Label>PFA</Label>
+                <Select value={pfaOperatorPfaId} onValueChange={setPfaOperatorPfaId}>
+                  <SelectTrigger className="mt-1.5 w-full">
+                    <SelectValue placeholder="Select a PFA…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(allPfas ?? [])
+                      .filter((p) => p.active !== false && p.status !== "INACTIVE")
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((p) => (
+                        <SelectItem key={p._id} value={p._id}>
+                          {p.name} ({p.code})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                className="font-semibold"
+                onClick={grantPfaAccess}
+                disabled={grantBusy}
+              >
+                {grantBusy ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+                Grant access
+              </Button>
+            </div>
+
+            {!pfaAccess ? (
+              <div className="mt-4">
+                <LoadingBlock label="Loading PFA access…" />
+              </div>
+            ) : (
+              <div className="mt-4">
+                <ClayTable
+                  headers={["Email", "PFA", "Type", "Status", "Granted", ""]}
+                  isEmpty={pfaAccess.linked.length === 0 && pfaAccess.grants.length === 0}
+                  emptyMessage="No PFA portal access has been provisioned yet."
+                >
+                  {[
+                    ...pfaAccess.linked.map((l) => ({
+                      key: `u-${l.userId}`,
+                      email: l.email,
+                      pfaName: l.pfaName,
+                      type: "Account",
+                      status: "linked",
+                      createdAt: 0,
+                      action: "unlink" as const,
+                      actionId: l.userId,
+                    })),
+                    ...pfaAccess.grants.map((g) => ({
+                      key: `g-${g.grantId}`,
+                      email: g.email,
+                      pfaName: g.pfaName,
+                      type: "Invitation",
+                      status: g.status,
+                      createdAt: g.createdAt,
+                      action: g.status === "revoked" ? null : ("revoke" as const),
+                      actionId: g.grantId,
+                    })),
+                  ].map((row) => (
+                    <tr key={row.key} className="border-t border-border/50">
+                      <td className="px-3 py-2.5 text-sm font-medium">{row.email}</td>
+                      <td className="px-3 py-2.5 text-sm">{row.pfaName}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">{row.type}</td>
+                      <td className="px-3 py-2.5">
+                        <Badge
+                          variant="secondary"
+                          className={
+                            row.status === "revoked"
+                              ? "bg-[#FBEAE8] text-[#8A2F28]"
+                              : row.status === "linked" || row.status === "claimed"
+                                ? "bg-[#E6F6EF] text-[#04593A]"
+                                : "bg-[#FBF3E0] text-[#7A5A10]"
+                          }
+                        >
+                          {row.status}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                        {row.createdAt ? fmtDateTime(row.createdAt) : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {row.action && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            onClick={async () => {
+                              try {
+                                if (row.action === "unlink") {
+                                  await unlinkPfaUser({ userId: row.actionId as Id<"users"> });
+                                  toast.success(`PFA portal access removed for ${row.email}`);
+                                } else {
+                                  await revokePfaGrant({ grantId: row.actionId as Id<"pfaAccessGrants"> });
+                                  toast.success(`Invitation revoked for ${row.email}`);
+                                }
+                              } catch (err) {
+                                toast.error(err instanceof Error ? err.message : "Update failed");
+                              }
+                            }}
+                          >
+                            {row.action === "unlink" ? "Unlink" : "Revoke"}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </ClayTable>
               </div>
             )}
           </section>

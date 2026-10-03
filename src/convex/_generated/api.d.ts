@@ -25,6 +25,7 @@ import type * as pension from "../pension.js";
 import type * as pfaDirectory from "../pfaDirectory.js";
 import type * as pfaDispatch from "../pfaDispatch.js";
 import type * as pfaDispatchData from "../pfaDispatchData.js";
+import type * as pfaPortal from "../pfaPortal.js";
 import type * as users from "../users.js";
 
 import type {
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   pfaDirectory: typeof pfaDirectory;
   pfaDispatch: typeof pfaDispatch;
   pfaDispatchData: typeof pfaDispatchData;
+  pfaPortal: typeof pfaPortal;
   users: typeof users;
 }>;
 
