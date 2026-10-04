@@ -450,8 +450,8 @@ export const registerEmployer = mutation({
       contactEmail: args.contactEmail.trim(),
       contactPhone: args.contactPhone.trim() || "—",
       representativeName: args.representativeName.trim() || (user.name ?? "Admin"),
-      status: "active",
-      kycStatus: "verified",
+      status: "pending",
+      kycStatus: "pending",
       ownerUserId: user._id,
       createdAt: now,
     });
