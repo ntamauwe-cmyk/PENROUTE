@@ -10,6 +10,7 @@
 import { v } from "convex/values";
 import { internalQuery, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { randRef } from "../lib/security";
 
 // Self-driving retry loop (spec §40): after every dispatch outcome the
 // recorder re-schedules the pipeline, which re-dispatches in-flight
@@ -204,7 +205,7 @@ export const internalRecord = internalMutation({
               batchId: settlement.batchId,
               employerId: batch.employerId,
               pfaId: settlement.pfaId,
-              exceptionRef: `EXC-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+              exceptionRef: randRef("EXC", 6),
               type: "settlement_failed",
               description: `PFA delivery stalled for ${settlement.settlementRef}`,
               amount: settlement.amount,

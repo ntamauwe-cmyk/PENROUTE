@@ -7,13 +7,28 @@
  * ============================================================================
  */
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { GITHUB_MANIFEST } from "../lib/github-manifest.generated";
+import { getCurrentUser } from "./users";
 
-/** Stage the generated manifest into the database for the push action. */
-export const stagePush = mutation({
-  args: { pushId: v.string() },
-  handler: async (ctx, { pushId }) => {
+/** Admin-only gate: pushing source to the operator's GitHub repository is a
+ *  privileged action — anonymous visitors and non-admin users are rejected
+ *  before anything is staged. */
+async function requireAdminUser(ctx: QueryCtx | MutationCtx) {
+  const user = await getCurrentUser(ctx);
+  if (!user) throw new Error("Not authenticated");
+  if (user.role !== "admin") throw new Error("Admin access required");
+  return user;
+}
+
+async function stagePushImpl(ctx: MutationCtx, pushId: string) {
     const files = GITHUB_MANIFEST;
     // Fresh stage for this pushId (clear any previous attempt)
     const old = await ctx.db
@@ -33,7 +48,26 @@ export const stagePush = mutation({
         createdAt: now,
       });
     }
-    return { staged: files.length, totalBytes: files.reduce((s, f) => s + f.bytes, 0) };
+  return { staged: files.length, totalBytes: files.reduce((s, f) => s + f.bytes, 0) };
+}
+
+/** Stage the generated manifest into the database for the push action.
+ *  Admin-only — see requireAdminUser. */
+export const stagePush = mutation({
+  args: { pushId: v.string() },
+  handler: async (ctx, { pushId }) => {
+    await requireAdminUser(ctx);
+    return await stagePushImpl(ctx, pushId);
+  },
+});
+
+/** Trusted operator path (Convex CLI / deployment tooling only — internal
+ *  functions are never callable from a browser). Keeps the audited terminal
+ *  push workflow working without exposing staging to anonymous clients. */
+export const internalStagePush = internalMutation({
+  args: { pushId: v.string() },
+  handler: async (ctx, { pushId }) => {
+    return await stagePushImpl(ctx, pushId);
   },
 });
 
@@ -71,10 +105,12 @@ export const internalMarkStatus = internalMutation({
   },
 });
 
-/** Status of a staged push (UI progress display). */
+/** Status of a staged push (UI progress display) — admin-only: staged rows
+ *  mirror the repository's file list. */
 export const githubPushStatus = query({
   args: { pushId: v.string() },
   handler: async (ctx, { pushId }) => {
+    await requireAdminUser(ctx);
     const rows = await ctx.db
       .query("githubPushFiles")
       .withIndex("by_push", (q) => q.eq("pushId", pushId))

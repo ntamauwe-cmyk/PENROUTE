@@ -27,12 +27,7 @@ import { DEFAULT_SCENARIO_VOLUMES, revenueScenarios } from "../lib/pricing";
 // Helpers (plain functions — called inside engine mutations)
 // ----------------------------------------------------------------------------
 
-function randRef(prefix: string, len = 6): string {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `${prefix}-${s}`;
-}
+// Reference generation uses the shared CSPRNG helper (src/lib/security.ts).
 
 export function periodKeyOf(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
@@ -198,6 +193,8 @@ export async function markChargeFailed(
 // ============================================================================
 // EMPLOYER BILLING (read-only, employer-scoped — server-computed totals)
 // ============================================================================
+
+import { randRef } from "../lib/security";
 
 export const getEmployerBilling = query({
   args: {},

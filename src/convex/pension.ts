@@ -81,9 +81,9 @@ export const getEmployerDashboard = query({
       .reduce((s, b) => s + b.platformFee, 0);
 
     return {
-      // SECURITY: strip the payroll API key — it is server-side only and is
-      // managed (shown once) through Settings → Payroll Integration.
-      employer: employer ? { ...employer, apiKey: undefined } : employer,
+      // SECURITY: strip the payroll API key (and its hash) — server-side
+      // only, managed (shown once) through Settings → Payroll Integration.
+      employer: employer ? { ...employer, apiKey: undefined, apiKeyHash: undefined } : employer,
       batches: batches.sort((a, b) => b.createdAt - a.createdAt),
       employeeCount: employees.length,
       openExceptions: openExceptions.length,
@@ -197,7 +197,8 @@ export const getPfaAllocations = query({
     if (!pfa) return null;
     // Integration credentials must remain server-only, including for admins
     // using this client-facing allocations query.
-    const { endpointConfig: _endpointConfig, ...safePfa } = pfa;
+    const safePfa = { ...pfa };
+    delete safePfa.endpointConfig;
 
     const settlements = await ctx.db
       .query("settlements")

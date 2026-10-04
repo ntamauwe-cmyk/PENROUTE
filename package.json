@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
-    "github:manifest": "node scripts/generate-github-manifest.mjs"
+    "github:manifest": "node scripts/generate-github-manifest.mjs",
+    "test:security": "bun scripts/test-security.ts",
+    "test:pricing": "bun scripts/test-pricing.ts",
+    "test:authz": "node scripts/test-authz-probe.mjs"
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.90",

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getEmployerForUser } from "./employers";
@@ -13,6 +13,7 @@ import {
 } from "./adapters";
 import { quoteForPostings } from "./pricing";
 import { markChargeFailed, markChargePaid, syncBillingCharge } from "./billing";
+import { hashApiKey, randRef } from "../lib/security";
 
 // ============================================================================
 // FEE ENGINE — pricing is centralised in the pricing service (pricing.ts) and
@@ -50,12 +51,7 @@ async function webhookEvent(
   });
 }
 
-function randRef(prefix: string, len = 6): string {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `${prefix}-${s}`;
-}
+// Reference generation uses the shared CSPRNG helper (src/lib/security.ts).
 
 async function getEmployerForEngine(
   ctx: Parameters<typeof getEmployerForUser>[0],
@@ -203,16 +199,41 @@ export const intakeApiSchedule = internalMutation({
     records: v.array(v.object(scheduleRow)),
   },
   handler: async (ctx, { apiKey, year, month, records }) => {
-    const employer = await ctx.db
+    // Present the key to the indexed SHA-256 column — raw keys are never
+    // stored after generation. Legacy plaintext keys keep working and are
+    // upgraded in place on first successful use (no silent invalidation).
+    const presentedHash = await hashApiKey(apiKey);
+    let employer = await ctx.db
       .query("employers")
-      .filter((q) => q.eq(q.field("apiKey"), apiKey))
+      .withIndex("by_apiKeyHash", (q) => q.eq("apiKeyHash", presentedHash))
       .first();
+    const legacyKey = employer ? false : true;
+    if (!employer) {
+      employer = await ctx.db
+        .query("employers")
+        .filter((q) => q.eq(q.field("apiKey"), apiKey))
+        .first();
+    }
     if (!employer) {
       return { ok: false as const, status: 401, error: "Invalid API key" };
     }
     if (employer.status !== "active" || employer.kycStatus !== "verified") {
       return { ok: false as const, status: 403, error: "Employer account is not approved for contribution intake" };
     }
+    // Durable, database-backed sliding window: 30 intake attempts / minute.
+    const now = Date.now();
+    const windowStart = employer.intakeWindowStart ?? 0;
+    const inWindow = now - windowStart < 60_000;
+    const attempt = inWindow ? (employer.intakeCount ?? 0) + 1 : 1;
+    if (attempt > 30) {
+      return { ok: false as const, status: 429, error: "Too many intake requests — retry in a minute" };
+    }
+    await ctx.db.patch(employer._id, {
+      intakeCount: attempt,
+      intakeWindowStart: inWindow ? windowStart : now,
+      // Migration: retire the plaintext copy now that the hash matched.
+      ...(legacyKey && employer.apiKey ? { apiKeyHash: presentedHash, apiKey: undefined } : {}),
+    });
     try {
       const res = await createBatchCore(ctx, {
         employer,
@@ -255,6 +276,10 @@ async function createBatchCore(
   const employer = opts.employer;
   if (month < 1 || month > 12) throw new Error("Invalid contribution month");
   if (records.length === 0) throw new Error("Cannot submit an empty schedule");
+  // Request-size limit for BOTH doors (browser wizard + payroll API).
+  if (records.length > 10_000) {
+    throw new Error("Schedule too large — maximum 10,000 records per submission");
+  }
 
     // ---- IDEMPOTENCY: batch fingerprint (spec §26) ----
     const canonical = [
@@ -314,7 +339,17 @@ async function createBatchCore(
       pinSeen.set(k, (pinSeen.get(k) ?? 0) + 1);
     }
 
-    const batchRef = `BATCH-${year}-${String(month).padStart(2, "0")}-${randRef("", 5)}`;
+    let batchRef = `BATCH-${year}-${String(month).padStart(2, "0")}-${randRef("", 5)}`;
+    // Database-level uniqueness: retry until the reference is free (indexed).
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const clash = await ctx.db
+        .query("contributionBatches")
+        .withIndex("by_ref", (q) => q.eq("batchRef", batchRef))
+        .first();
+      if (!clash) break;
+      batchRef = `BATCH-${year}-${String(month).padStart(2, "0")}-${randRef("", 5)}`;
+      if (attempt === 4) throw new Error("Could not allocate a unique batch reference — retry");
+    }
 
     const batchId = await ctx.db.insert("contributionBatches", {
       employerId: employer._id,
@@ -468,7 +503,18 @@ export const payBatch = mutation({
     const fee = charge.processingFeeKobo;
     const totalDebit = pension + fee;
 
-    const paymentRef = randRef("PMT", 8);
+    let paymentRef = randRef("PMT", 8);
+    // Database-level uniqueness for the provider-facing reference: a collision
+    // could otherwise attach a webhook to the wrong payment (indexed check).
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const clash = await ctx.db
+        .query("payments")
+        .withIndex("by_ref", (q) => q.eq("paymentRef", paymentRef))
+        .first();
+      if (!clash) break;
+      paymentRef = randRef("PMT", 8);
+      if (attempt === 4) throw new Error("Could not allocate a unique payment reference — retry");
+    }
     const idempotencyKey = batch.fingerprint;
 
     // IDEMPOTENT payment creation
@@ -913,6 +959,39 @@ export const finalizeLivePayment = internalMutation({
 // a retry after a mid-pipeline failure resumes without duplicating money
 // movement (spec §40).
 // ============================================================================
+
+/** Client-safe pipeline resume: the state machine itself is internal, so the
+ *  browser can only ask the server to run it — and only for its OWN batch
+ *  (admins may resume any). Scheduling happens server-side; clients can never
+ *  invoke processPipeline directly. */
+export const resumePipeline = mutation({
+  args: { batchId: v.id("contributionBatches") },
+  handler: async (ctx, { batchId }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) throw new Error("Not authenticated");
+    const batch = await ctx.db.get(batchId);
+    if (!batch) throw new Error("Batch not found");
+    if (user.role !== "admin") {
+      const employer = await getEmployerForEngine(ctx, user);
+      if (!employer || batch.employerId !== employer._id) throw new Error("Batch not found");
+    }
+    await audit(ctx, {
+      actor: user.email ?? "unknown",
+      action: "pipeline_resumed",
+      entityType: "batch",
+      employerId: batch.employerId,
+      batchId,
+      details: `Pipeline resume requested for ${batch.batchRef} (status: ${batch.status})`,
+    });
+    // Only a batch in `processing` can actually advance; anything else is a
+    // no-op report so a late retry (already completed) never errors or
+    // double-runs the state machine.
+    if (batch.status === "processing") {
+      await ctx.scheduler.runAfter(0, internal.engine.processPipeline, { batchId });
+    }
+    return { ok: true as const, status: batch.status };
+  },
+});
 
 export const processPipeline = internalMutation({
   args: { batchId: v.id("contributionBatches") },

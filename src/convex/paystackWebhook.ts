@@ -14,6 +14,7 @@
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import type { FunctionReference } from "convex/server";
+import { readCapped } from "../lib/security";
 
 // Generated types have caught up — resolve the internal references directly.
 // (Kept behind a typed accessor so a future rename fails loudly, not silently.)
@@ -23,9 +24,9 @@ const engineApi = api.engine as unknown as {
   markLivePaymentFailedSystem: FunctionReference<"mutation">;
 };
 
-// In-memory per-isolate idempotency. The database-level guards in
-// finalizeLivePaymentSystem (status check + idempotent pipeline) are the
-// durable protection; this just avoids repeat work on redeliveries.
+// Durable, database-backed idempotency: finalizeLivePaymentSystem and
+// markLivePaymentFailedSystem are guarded by the stored payment status, so
+// duplicate, delayed or replayed provider deliveries are harmless no-ops.
 
 function timingSafeEqualHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -54,7 +55,17 @@ async function verifyPaystackSignature(raw: string, signature: string, key: stri
 
 export const paystackWebhook = httpAction(async (ctx, request) => {
   const signature = request.headers.get("x-paystack-signature");
-  const raw = await request.text();
+  let raw: string;
+  try {
+    // Size cap BEFORE any signature work: an unauthenticated caller cannot
+    // stream an unbounded body into memory (Paystack payloads are small).
+    raw = await readCapped(request.body, 1_000_000);
+  } catch {
+    return new Response(JSON.stringify({ error: "payload too large" }), {
+      status: 413,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   // The secret lives only in the server environment (Keys tab). Webhooks
   // without a configured key or signature are rejected outright.

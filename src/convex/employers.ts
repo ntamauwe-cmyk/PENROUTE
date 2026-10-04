@@ -1,6 +1,7 @@
 import { MutationCtx, QueryCtx, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
+import { hashApiKey } from "../lib/security";
 
 export async function getEmployerForUser(
   ctx: QueryCtx,
@@ -72,7 +73,13 @@ export const generateApiKey = mutation({
   handler: async (ctx) => {
     const { user, employer } = await requireOwnEmployer(ctx);
     const key = generateApiKeyToken();
-    await ctx.db.patch(employer._id, { apiKey: key, apiKeyCreatedAt: Date.now() });
+    // Store only the SHA-256 hash — the raw key is returned exactly once here
+    // and is never retrievable from any query afterwards.
+    await ctx.db.patch(employer._id, {
+      apiKey: undefined,
+      apiKeyHash: await hashApiKey(key),
+      apiKeyCreatedAt: Date.now(),
+    });
     await audit(ctx, {
       actor: user.email ?? "unknown",
       action: "api_key_generated",
@@ -90,8 +97,12 @@ export const revokeApiKey = mutation({
   args: {},
   handler: async (ctx) => {
     const { user, employer } = await requireOwnEmployer(ctx);
-    if (!employer.apiKey) throw new Error("No API key configured");
-    await ctx.db.patch(employer._id, { apiKey: undefined, apiKeyCreatedAt: undefined });
+    if (!employer.apiKey && !employer.apiKeyHash) throw new Error("No API key configured");
+    await ctx.db.patch(employer._id, {
+      apiKey: undefined,
+      apiKeyHash: undefined,
+      apiKeyCreatedAt: undefined,
+    });
     await audit(ctx, {
       actor: user.email ?? "unknown",
       action: "api_key_revoked",
@@ -110,6 +121,9 @@ export const getApiKeysStatus = query({
   handler: async (ctx) => {
     const employer = await getCurrentEmployer(ctx);
     if (!employer) return null;
-    return { hasKey: Boolean(employer.apiKey), createdAt: employer.apiKeyCreatedAt ?? null };
+    return {
+      hasKey: Boolean(employer.apiKey || employer.apiKeyHash),
+      createdAt: employer.apiKeyCreatedAt ?? null,
+    };
   },
 });

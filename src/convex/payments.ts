@@ -47,6 +47,27 @@ interface RailResult {
   reason?: string;
 }
 
+/** Explicit result shapes — also keeps the module's types from becoming
+ *  circular through the generated `api`/`internal` references below. */
+type VerifyResult =
+  | {
+      ok: true;
+      outcome: string;
+      amountKobo: number;
+      providerFeesKobo: number;
+      currency: string;
+      reference: string;
+    }
+  | { ok: false; reason: string };
+
+type ConfirmResult = {
+  ok: true;
+  outcome: string;
+  alreadyProcessed?: boolean;
+  amountKobo?: number;
+  currency?: string;
+};
+
 /** Initialize a Paystack transaction for the consolidated employer payment. */
 export const initializeLivePayment = action({
   args: {
@@ -120,7 +141,7 @@ export const initializeLivePayment = action({
  */
 export const verifyLivePayment = action({
   args: { paymentRef: v.string() },
-  handler: async (ctx, { paymentRef }) => {
+  handler: async (ctx, { paymentRef }): Promise<VerifyResult> => {
     const caller = await ctx.runQuery(api.users.currentUser, {});
     if (!caller) return { ok: false as const, reason: "Authentication required" };
     const stored = await ctx.runQuery(internal.engine.getPaymentByRef, { paymentRef });
@@ -177,7 +198,7 @@ export const verifyLivePayment = action({
  */
 export const confirmLivePayment = action({
   args: { batchId: v.id("contributionBatches") },
-  handler: async (ctx, { batchId }) => {
+  handler: async (ctx, { batchId }): Promise<ConfirmResult> => {
     const context = await ctx.runQuery(api.engine.getLivePaymentContext, { batchId });
     if (!context) throw new Error("No authorized pending payment for this batch");
     const payment = await ctx.runQuery(internal.engine.getPaymentByRef, {

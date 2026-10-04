@@ -3,17 +3,12 @@ import { mutation, query } from "./_generated/server";
 import { getCurrentUser } from "./users";
 import { internal } from "./_generated/api";
 import { audit } from "./employers";
+import { randRef } from "../lib/security";
 
 // ============================================================================
 // PLATFORM ADMIN CONSOLE (spec §22, §23) — admins only
 // ============================================================================
 
-function randRef(prefix: string, len = 6): string {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `${prefix}-${s}`;
-}
 
 async function requireAdmin(ctx: Parameters<typeof getCurrentUser>[0]) {
   const user = await getCurrentUser(ctx);

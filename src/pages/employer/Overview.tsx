@@ -398,7 +398,7 @@ export default function Overview() {
 
 /** Resume button shown when a batch is stuck in processing (failure recovery). */
 function ResumePipeline({ batchId }: { batchId: Id<"contributionBatches"> }) {
-  const pipeline = useMutation(api.engine.processPipeline);
+  const pipeline = useMutation(api.engine.resumePipeline);
   const [running, setRunning] = useState(false);
   return (
     <Button

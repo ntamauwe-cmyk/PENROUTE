@@ -34,6 +34,7 @@ import { action, internalAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { createHmac } from "node:crypto";
+import { isSafePublicHttpsUrl, readCapped } from "../lib/security";
 
 /** Statuses a PFA system may return (spec §13). */
 const PFA_STATUSES = new Set([
@@ -47,22 +48,8 @@ const PFA_STATUSES = new Set([
   "reconciled",
 ]);
 
-/** Reject obvious SSRF targets before server-side outbound requests. */
-function isSafePublicHttpsUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    const host = url.hostname.toLowerCase();
-    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
-    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host === "metadata.google.internal") return false;
-    if (host.includes(":")) return false;
-    const octets = host.split(".").map(Number);
-    if (octets.length === 4 && octets.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
-      const [a, b] = octets;
-      if (a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return false;
-    } else if (!host.includes(".")) return false;
-    return true;
-  } catch { return false; }
-}
+/** SSRF allow-list lives in src/lib/security.ts (isSafePublicHttpsUrl) so
+ *  the exact same logic is unit-tested by scripts/test-security.ts. */
 
 interface PfaEndpointConfig {
   endpoint?: string;
@@ -180,9 +167,10 @@ export const dispatchLiveSettlements = internalAction({
           method: "POST",
           headers: authHeaders(cfg, s.settlementRef, body),
           body,
+          redirect: "error",
           signal: AbortSignal.timeout(10_000),
         });
-        const text = await res.text();
+        const text = await readCapped(res.body, 65_536);
         let parsed: { status?: string; message?: string; acceptedCount?: number; rejectedCount?: number } = {};
         try {
           parsed = JSON.parse(text) as typeof parsed;
@@ -251,9 +239,10 @@ export const testPfaConnection = action({
         method: "POST",
         headers: authHeaders(cfg),
         body: JSON.stringify({ ping: true, pfaCode: pfa.code, timestamp: Date.now() }),
+        redirect: "error",
         signal: AbortSignal.timeout(10_000),
       });
-      const text = (await res.text()).slice(0, 200);
+      const text = (await readCapped(res.body, 65_536)).slice(0, 200);
       return { ok: res.ok as boolean, httpStatus: res.status, response: text };
     } catch (e) {
       return { ok: false as const, reason: e instanceof Error ? e.message : "Connection failed" };

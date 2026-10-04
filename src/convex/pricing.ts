@@ -137,6 +137,8 @@ function rangesOverlap(
 // ============================================================================
 
 /** Public pricing (active tiers + plans) — no session required. */
+import { randRef } from "../lib/security";
+
 export const getPublicPricing = query({
   args: {},
   handler: async (ctx) => {
@@ -283,7 +285,7 @@ export const createTier = mutation({
       }
     }
     const now = Date.now();
-    const code = `tier-${now.toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const code = `tier-${now.toString(36)}-${randRef("", 4).slice(1)}`;
     const id = await ctx.db.insert("pricingTiers", {
       code,
       label,
