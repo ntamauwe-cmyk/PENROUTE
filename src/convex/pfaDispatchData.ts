@@ -9,7 +9,7 @@
  */
 import { v } from "convex/values";
 import { internalQuery, internalMutation } from "./_generated/server";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 
 // Self-driving retry loop (spec §40): after every dispatch outcome the
 // recorder re-schedules the pipeline, which re-dispatches in-flight
@@ -185,7 +185,7 @@ export const internalRecord = internalMutation({
     if (stillInFlight) {
       if (attempts < MAX_DISPATCH_ATTEMPTS) {
         const delay = Math.min(POLL_RESUME_DELAY_MS, POSTED_RESUME_DELAY_MS * attempts);
-        await ctx.scheduler.runAfter(delay, api.engine.processPipeline, {
+        await ctx.scheduler.runAfter(delay, internal.engine.processPipeline, {
           batchId: settlement.batchId,
         });
       } else if (attempts === MAX_DISPATCH_ATTEMPTS) {

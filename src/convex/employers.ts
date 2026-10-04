@@ -6,19 +6,16 @@ export async function getEmployerForUser(
   ctx: QueryCtx,
   user: { _id: Id<"users">; employerId?: Id<"employers"> },
 ): Promise<Doc<"employers"> | null> {
-  if (user.employerId) return await ctx.db.get(user.employerId);
-  const owned = await ctx.db
+  // Resolve only an explicitly linked employer or a workspace owned by this user.
+  // Never fall back to a shared active/demo employer: that can cross tenant boundaries.
+  if (user.employerId) {
+    const linked = await ctx.db.get(user.employerId);
+    if (linked && linked.ownerUserId === user._id) return linked;
+  }
+  return await ctx.db
     .query("employers")
     .withIndex("by_owner", (q) => q.eq("ownerUserId", user._id))
     .first();
-  if (owned) return owned;
-  // Demo fallback: resolve to the seeded active employer — same rule every
-  // module uses, so the roster always matches what the screen shows.
-  const active = await ctx.db
-    .query("employers")
-    .withIndex("by_status", (q) => q.eq("status", "active"))
-    .first();
-  return active ?? null;
 }
 
 export async function getCurrentEmployer(ctx: QueryCtx): Promise<Doc<"employers"> | null> {

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getEmployerForUser } from "./employers";
@@ -176,6 +176,7 @@ export const prepareBatch = mutation({
     if (!user) throw new Error("Not authenticated");
     const employer = await getEmployerForEngine(ctx, user);
     if (!employer) throw new Error("No employer profile. Complete onboarding first.");
+    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new Error("Employer account must be approved before submitting contributions.");
     return createBatchCore(ctx, {
       employer,
       actor: user.email ?? "unknown",
@@ -209,8 +210,8 @@ export const intakeApiSchedule = internalMutation({
     if (!employer) {
       return { ok: false as const, status: 401, error: "Invalid API key" };
     }
-    if (employer.status === "suspended") {
-      return { ok: false as const, status: 403, error: "Employer account is suspended" };
+    if (employer.status !== "active" || employer.kycStatus !== "verified") {
+      return { ok: false as const, status: 403, error: "Employer account is not approved for contribution intake" };
     }
     try {
       const res = await createBatchCore(ctx, {
@@ -439,6 +440,7 @@ export const payBatch = mutation({
     if (!user) throw new Error("Not authenticated");
     const employer = await getEmployerForEngine(ctx, user);
     if (!employer) throw new Error("No employer profile");
+    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new Error("Employer account must be approved before payment.");
 
     const batch = await ctx.db.get(batchId);
     if (!batch || batch.employerId !== employer._id) throw new Error("Batch not found");
@@ -818,7 +820,7 @@ export const markLivePaymentFailedSystem = internalMutation({
   args: { paymentId: v.id("payments"), reason: v.string() },
   handler: async (ctx, { paymentId, reason }) => {
     const payment = await ctx.db.get(paymentId);
-    if (!payment || payment.status === "successful") return { ok: true as const };
+    if (!payment || payment.status === "successful" || payment.status === "failed") return { ok: true as const };
 
     await ctx.db.patch(paymentId, { status: "failed", failureReason: reason });
     await ctx.db.patch(payment.batchId, { paymentStatus: "failed" });
@@ -855,7 +857,7 @@ export const markLivePaymentFailedSystem = internalMutation({
 
 /** Live rail: finalize a VERIFIED successful payment (called by the
  *  confirmLivePayment action after Paystack verification). */
-export const finalizeLivePayment = mutation({
+export const finalizeLivePayment = internalMutation({
   args: { batchId: v.id("contributionBatches"), providerFeesKobo: v.optional(v.number()) },
   handler: async (ctx, { batchId, providerFeesKobo }) => {
     const user = await getCurrentUser(ctx);
@@ -912,7 +914,7 @@ export const finalizeLivePayment = mutation({
 // movement (spec §40).
 // ============================================================================
 
-export const processPipeline = mutation({
+export const processPipeline = internalMutation({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
     const batch = await ctx.db.get(batchId);
@@ -1072,7 +1074,7 @@ export const processPipeline = mutation({
       (s) => s.status === "pending" || s.status === "processing",
     );
     if (inFlight.length > 0) {
-      await ctx.scheduler.runAfter(0, api.pfaDispatch.dispatchLiveSettlements, { batchId });
+      await ctx.scheduler.runAfter(0, internal.pfaDispatch.dispatchLiveSettlements, { batchId });
       if (settledSettlements.length === 0) {
         await ctx.db.patch(batchId, { settlementStatus: "processing" });
       } else {

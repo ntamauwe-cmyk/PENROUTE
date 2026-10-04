@@ -23,7 +23,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const PAYSTACK_BASE = "https://api.paystack.co";
 
@@ -53,9 +53,25 @@ export const initializeLivePayment = action({
     paymentRef: v.string(),
     amountKobo: v.number(),
     email: v.string(),
-    callbackUrl: v.optional(v.string()),
   },
-  handler: async (_ctx, { paymentRef, amountKobo, email, callbackUrl }): Promise<RailResult> => {
+  handler: async (ctx, { paymentRef, amountKobo, email }): Promise<RailResult> => {
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller) return { accepted: false, reason: "Authentication required" };
+    const stored = await ctx.runQuery(internal.engine.getPaymentByRef, { paymentRef });
+    const context = stored
+      ? await ctx.runQuery(api.engine.getLivePaymentContext, { batchId: stored.batchId })
+      : null;
+    if (
+      !stored ||
+      stored.status !== "initiated" ||
+      stored.rail !== "paystack" ||
+      !context ||
+      context.paymentRef !== paymentRef ||
+      context.expectedKobo !== amountKobo ||
+      context.payerEmail !== email
+    ) {
+      return { accepted: false, reason: "No matching authorized pending payment" };
+    }
     const key = process.env.PAYSTACK_SECRET_KEY;
     if (!key) {
       return { accepted: false, reason: "PAYSTACK_SECRET_KEY is not configured" };
@@ -72,7 +88,6 @@ export const initializeLivePayment = action({
           amount: amountKobo, // Paystack expects kobo
           email,
           currency: "NGN",
-          callbackUrl,
           metadata: { purpose: "pension_contribution", paymentRef },
         }),
       });
@@ -105,7 +120,16 @@ export const initializeLivePayment = action({
  */
 export const verifyLivePayment = action({
   args: { paymentRef: v.string() },
-  handler: async (_ctx, { paymentRef }) => {
+  handler: async (ctx, { paymentRef }) => {
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller) return { ok: false as const, reason: "Authentication required" };
+    const stored = await ctx.runQuery(internal.engine.getPaymentByRef, { paymentRef });
+    const context = stored
+      ? await ctx.runQuery(api.engine.getLivePaymentContext, { batchId: stored.batchId })
+      : null;
+    if (!stored || stored.rail !== "paystack" || !context || context.paymentRef !== paymentRef) {
+      return { ok: false as const, reason: "No authorized payment found for this reference" };
+    }
     const key = process.env.PAYSTACK_SECRET_KEY;
     if (!key) {
       return { ok: false as const, reason: "PAYSTACK_SECRET_KEY is not configured" };
@@ -135,6 +159,7 @@ export const verifyLivePayment = action({
         amountKobo: data.data.amount,
         providerFeesKobo: data.data.fees ?? 0,
         currency: data.data.currency,
+        reference: data.data.reference,
       };
     } catch (e) {
       return {
@@ -142,6 +167,57 @@ export const verifyLivePayment = action({
         reason: e instanceof Error ? e.message : "Paystack verification failed",
       };
     }
+  },
+});
+
+/**
+ * Verify a checkout on the server and finalize only the exact stored payment.
+ * The browser supplies a batch ID only; reference, amount and payer are loaded
+ * from the authenticated employer's server-side payment record.
+ */
+export const confirmLivePayment = action({
+  args: { batchId: v.id("contributionBatches") },
+  handler: async (ctx, { batchId }) => {
+    const context = await ctx.runQuery(api.engine.getLivePaymentContext, { batchId });
+    if (!context) throw new Error("No authorized pending payment for this batch");
+    const payment = await ctx.runQuery(internal.engine.getPaymentByRef, {
+      paymentRef: context.paymentRef,
+    });
+    if (!payment || payment.batchId !== batchId || payment.status === "successful") {
+      if (payment?.status === "successful") return { ok: true as const, outcome: "success" as const, alreadyProcessed: true };
+      throw new Error("Pending payment record not found");
+    }
+    if (payment.rail !== "paystack" || payment.amount !== context.expectedKobo) {
+      throw new Error("Stored payment details do not match the checkout context");
+    }
+    const verified = await ctx.runAction(api.payments.verifyLivePayment, {
+      paymentRef: payment.paymentRef,
+    });
+    if (!verified.ok) throw new Error(verified.reason ?? "Paystack verification failed");
+    if (verified.outcome !== "success") {
+      return { ok: true as const, outcome: verified.outcome };
+    }
+    if (
+      verified.reference !== payment.paymentRef ||
+      verified.amountKobo !== payment.amount ||
+      verified.currency !== "NGN"
+    ) {
+      await ctx.runMutation(internal.engine.markLivePaymentFailedSystem, {
+        paymentId: payment._id,
+        reason: "Paystack verification reference, exact amount, or currency mismatch",
+      });
+      throw new Error("Payment details do not match the expected amount, currency, or reference");
+    }
+    await ctx.runMutation(internal.engine.finalizeLivePaymentSystem, {
+      paymentId: payment._id,
+      providerFeesKobo: verified.providerFeesKobo,
+    });
+    return {
+      ok: true as const,
+      outcome: "success" as const,
+      amountKobo: verified.amountKobo,
+      currency: verified.currency,
+    };
   },
 });
 
@@ -154,12 +230,16 @@ export const logRailCall = action({
     success: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await ctx.runMutation(api.pension.internalAudit, {
-      actor: "system",
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller) throw new Error("Authentication required");
+    const batch = await ctx.runQuery(api.pension.getBatchDetail, { batchId: args.batchId });
+    if (!batch) throw new Error("Not authorized to log activity for this batch");
+    await ctx.runMutation(internal.pension.internalAudit, {
+      actor: caller.email ?? "unknown",
       action: "integration_log",
       entityType: "integration",
       batchId: args.batchId,
-      details: `rail | ${args.requestSummary} | ${args.responseSummary}`,
+      details: `rail | ${args.requestSummary.slice(0, 300)} | ${args.responseSummary.slice(0, 300)}`,
     });
   },
 });

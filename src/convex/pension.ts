@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getCurrentEmployer, getEmployerForUser } from "./employers";
@@ -53,22 +53,8 @@ export const getEmployerDashboard = query({
     // employer data (including the demo-employer fallback below).
     if (user.role === "pfa") return null;
 
-    // Employer resolution: user link first, then owner match.
-    // Auto-claim of the demo employer happens in claimDemoEmployer (queries cannot mutate).
-    let employer = user.employerId
-      ? await ctx.db.get(user.employerId)
-      : await ctx.db
-          .query("employers")
-          .withIndex("by_owner", (q) => q.eq("ownerUserId", user._id))
-          .first();
-
-    if (!employer) {
-      employer =
-        (await ctx.db
-          .query("employers")
-          .withIndex("by_status", (q) => q.eq("status", "active"))
-          .first()) ?? null;
-    }
+    // Explicit employer membership only; shared active/demo fallback is unsafe.
+    const employer = await getEmployerForUser(ctx, user);
     if (!employer) return null;
 
     const batches = await ctx.db
@@ -117,12 +103,13 @@ export const getEmployerDashboard = query({
 export const getBatchDetail = query({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user || user.role === "pfa") return null;
     const employer = await getCurrentEmployer(ctx);
+    if (!employer) return null;
     const batch = await ctx.db.get(batchId);
     if (!batch) return null;
-    // Auth: batch must belong to the caller's employer (or be public demo data
-    // pre-claim — only when no employer profile exists yet).
-    if (employer && batch.employerId !== employer._id) {
+    if (batch.employerId !== employer._id) {
       throw new Error("Not authorized to view this batch");
     }
 
@@ -208,6 +195,9 @@ export const getPfaAllocations = query({
     }
     const pfa = await ctx.db.get(pfaId);
     if (!pfa) return null;
+    // Integration credentials must remain server-only, including for admins
+    // using this client-facing allocations query.
+    const { endpointConfig: _endpointConfig, ...safePfa } = pfa;
 
     const settlements = await ctx.db
       .query("settlements")
@@ -233,7 +223,7 @@ export const getPfaAllocations = query({
       }),
     );
 
-    return { pfa, groups: enriched };
+    return { pfa: safePfa, groups: enriched };
   },
 });
 
@@ -286,9 +276,13 @@ export const getFeeConfig = query({
 export const getBatchAudit = query({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user || user.role === "pfa") return [];
     const employer = await getCurrentEmployer(ctx);
+    if (!employer) return [];
     const batch = await ctx.db.get(batchId);
-    if (employer && batch && batch.employerId !== employer._id) {
+    if (!batch) return [];
+    if (batch.employerId !== employer._id) {
       throw new Error("Not authorized to view this batch");
     }
     return (
@@ -401,6 +395,7 @@ export const claimDemoEmployer = mutation({
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
+    if (user.role !== "admin") throw new Error("Demo employer claiming is restricted to platform admins");
     const active = await ctx.db
       .query("employers")
       .withIndex("by_status", (q) => q.eq("status", "active"))
@@ -455,8 +450,8 @@ export const registerEmployer = mutation({
       contactEmail: args.contactEmail.trim(),
       contactPhone: args.contactPhone.trim() || "—",
       representativeName: args.representativeName.trim() || (user.name ?? "Admin"),
-      status: "active",
-      kycStatus: "verified",
+      status: "pending",
+      kycStatus: "pending",
       ownerUserId: user._id,
       createdAt: now,
     });
@@ -481,11 +476,13 @@ export const registerEmployer = mutation({
 export const seedDemoData = mutation({
   args: {},
   handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) throw new Error("Not authenticated");
+    if (user.role !== "admin") throw new Error("Demo data seeding is restricted to platform admins");
     const existing = await ctx.db.query("employers").first();
     if (existing) return { seeded: false, reason: "already_seeded" };
 
     const now = Date.now();
-    const user = await getCurrentUser(ctx);
     const employerId = await ctx.db.insert("employers", {
       name: "Rae Technologies Limited",
       rcNumber: "RC-1938476",
@@ -598,9 +595,9 @@ export const resolveException = mutation({
     const exc = await ctx.db.get(exceptionId);
     if (!exc) throw new Error("Exception not found");
     // Employer users may only resolve their own exceptions; admins may resolve any.
-    if (user.role !== "admin" && exc.employerId) {
+    if (user.role !== "admin") {
       const mine = await getEmployerForUser(ctx, user);
-      if (!mine || mine._id !== exc.employerId) {
+      if (!mine || !exc.employerId || mine._id !== exc.employerId) {
         throw new Error("Not authorized to resolve this exception");
       }
     }
@@ -769,7 +766,7 @@ export const toggleEmployeeActive = mutation({
 });
 
 /** Internal: append to the immutable audit trail. */
-export const internalAudit = mutation({
+export const internalAudit = internalMutation({
   args: {
     actor: v.string(),
     action: v.string(),
