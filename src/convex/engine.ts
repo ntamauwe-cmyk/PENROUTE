@@ -855,7 +855,7 @@ export const markLivePaymentFailedSystem = internalMutation({
 
 /** Live rail: finalize a VERIFIED successful payment (called by the
  *  confirmLivePayment action after Paystack verification). */
-export const finalizeLivePayment = mutation({
+export const finalizeLivePayment = internalMutation({
   args: { batchId: v.id("contributionBatches"), providerFeesKobo: v.optional(v.number()) },
   handler: async (ctx, { batchId, providerFeesKobo }) => {
     const user = await getCurrentUser(ctx);
