@@ -27,8 +27,7 @@ export function LivePaymentPanel({
   onPaid: () => void;
 }) {
   const initialize = useAction(api.payments.initializeLivePayment);
-  const verify = useAction(api.payments.verifyLivePayment);
-  const finalize = useMutation(api.engine.finalizeLivePayment);
+  const confirm = useAction(api.payments.confirmLivePayment);
   const markFailed = useMutation(api.engine.markLivePaymentFailed);
   const context = useQuery(api.engine.getLivePaymentContext, { batchId });
 
@@ -66,22 +65,8 @@ export function LivePaymentPanel({
     if (!paymentRef) return;
     setChecking(true);
     try {
-      const res = await verify({ paymentRef });
-      if (!res.ok) {
-        toast.error(res.reason ?? "Verification failed");
-        return;
-      }
+      const res = await confirm({ batchId });
       if (res.outcome === "success") {
-        // Amount check — never finalize an under/over payment silently
-        if (res.amountKobo < expectedKobo) {
-          await markFailed({
-            batchId,
-            reason: `Verified amount ${fmtNaira(res.amountKobo)} is less than expected ${fmtNaira(expectedKobo)}`,
-          });
-          toast.error("Payment amount mismatch — an exception was recorded.");
-          return;
-        }
-        await finalize({ batchId, providerFeesKobo: res.providerFeesKobo });
         toast.success("Payment verified — processing contributions");
         onPaid();
       } else if (res.outcome === "failed" || res.outcome === "abandoned") {
