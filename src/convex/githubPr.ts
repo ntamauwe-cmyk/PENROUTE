@@ -225,6 +225,39 @@ export const internalUpdatePr = internalAction({
   },
 });
 
+/** Read-only diagnostics: fetch CI job logs (plain text, via redirect). */
+export const internalJobLogs = internalAction({
+  args: { jobId: v.string(), maxChars: v.optional(v.number()) },
+  handler: async (
+    _ctx: ActionCtx,
+    args: { jobId: string; maxChars?: number },
+  ): Promise<{ ok: boolean; reason?: string; log?: string }> => {
+    const token = await requireToken();
+    try {
+      const url = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/jobs/${args.jobId}/logs`;
+      const res = await fetch(url, {
+        redirect: "manual",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+      });
+      let text: string;
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("location");
+        if (!location) return { ok: false, reason: "Redirect without location." };
+        const signed = await fetch(location); // signed URL — no auth header needed
+        text = await signed.text();
+      } else if (res.ok) {
+        text = await res.text();
+      } else {
+        return { ok: false, reason: `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}` };
+      }
+      const limit = args.maxChars ?? 12000;
+      return { ok: true, log: text.slice(0, limit) };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
 /** Merge the PR. Callers MUST have verified `internalPrStatus` first. */
 export const internalMergePr = internalAction({
   args: {

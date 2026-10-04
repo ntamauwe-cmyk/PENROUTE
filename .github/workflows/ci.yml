@@ -18,6 +18,10 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install
+      # The generated manifest is never committed (the generator skips itself),
+      # so CI must produce it before typecheck/tests that import it.
+      - name: Generate GitHub manifest
+        run: node scripts/generate-github-manifest.mjs
       - name: Typecheck
         run: bunx tsc -b --noEmit
       - name: Lint
