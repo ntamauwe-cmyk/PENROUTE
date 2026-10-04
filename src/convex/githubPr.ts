@@ -29,6 +29,7 @@ const PR_NUMBER = 2;
 
 interface PullRequestInfo {
   number: number;
+  node_id: string;
   state: string;
   draft: boolean;
   merged: boolean;
@@ -146,7 +147,52 @@ export const internalPrStatus = internalAction({
   },
 });
 
-/** Mark the PR ready for review and/or replace its title/body. */
+/**
+ * Convert a draft PR to ready-for-review. The REST PATCH `draft: false`
+ * field is silently ignored by GitHub, so this goes through the GraphQL
+ * `markPullRequestReadyForReview` mutation instead (REST for title/body).
+ */
+export const internalMarkReady = internalAction({
+  args: {},
+  handler: async (): Promise<PrActionResult> => {
+    const token = await requireToken();
+    try {
+      const pr = await gh<PullRequestInfo>(
+        `/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}`,
+        token,
+      );
+      const res = await fetch(`${GITHUB_API}/graphql`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query:
+            "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft state } } }",
+          variables: { id: pr.node_id },
+        }),
+      });
+      const data = (await res.json()) as {
+        data?: { markPullRequestReadyForReview?: { pullRequest?: { isDraft: boolean; state: string } } };
+        errors?: { message: string }[];
+      };
+      if (!res.ok || data.errors?.length) {
+        return {
+          ok: false,
+          reason: data.errors?.map((e) => e.message).join("; ") ?? `HTTP ${res.status}`,
+        };
+      }
+      const prOut = data.data?.markPullRequestReadyForReview?.pullRequest;
+      return { ok: true, draft: prOut?.isDraft ?? false };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
+/** Replace the PR title/body (draft flag is handled by internalMarkReady). */
 export const internalUpdatePr = internalAction({
   args: {
     title: v.optional(v.string()),
@@ -163,6 +209,7 @@ export const internalUpdatePr = internalAction({
       if (args.title !== undefined) patch.title = args.title;
       if (args.body !== undefined) patch.body = args.body;
       if (args.draft !== undefined) patch.draft = args.draft;
+      delete patch.draft; // REST cannot un-draft; internalMarkReady does that.
       if (Object.keys(patch).length === 0) {
         return { ok: false, reason: "Nothing to update." };
       }
