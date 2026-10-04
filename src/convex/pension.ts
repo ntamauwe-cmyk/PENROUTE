@@ -195,6 +195,9 @@ export const getPfaAllocations = query({
     }
     const pfa = await ctx.db.get(pfaId);
     if (!pfa) return null;
+    // Integration credentials must remain server-only, including for admins
+    // using this client-facing allocations query.
+    const { endpointConfig: _endpointConfig, ...safePfa } = pfa;
 
     const settlements = await ctx.db
       .query("settlements")
@@ -220,7 +223,7 @@ export const getPfaAllocations = query({
       }),
     );
 
-    return { pfa, groups: enriched };
+    return { pfa: safePfa, groups: enriched };
   },
 });
 
