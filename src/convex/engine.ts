@@ -176,6 +176,7 @@ export const prepareBatch = mutation({
     if (!user) throw new Error("Not authenticated");
     const employer = await getEmployerForEngine(ctx, user);
     if (!employer) throw new Error("No employer profile. Complete onboarding first.");
+    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new Error("Employer account must be approved before submitting contributions.");
     return createBatchCore(ctx, {
       employer,
       actor: user.email ?? "unknown",
@@ -209,8 +210,8 @@ export const intakeApiSchedule = internalMutation({
     if (!employer) {
       return { ok: false as const, status: 401, error: "Invalid API key" };
     }
-    if (employer.status === "suspended") {
-      return { ok: false as const, status: 403, error: "Employer account is suspended" };
+    if (employer.status !== "active" || employer.kycStatus !== "verified") {
+      return { ok: false as const, status: 403, error: "Employer account is not approved for contribution intake" };
     }
     try {
       const res = await createBatchCore(ctx, {
@@ -439,6 +440,7 @@ export const payBatch = mutation({
     if (!user) throw new Error("Not authenticated");
     const employer = await getEmployerForEngine(ctx, user);
     if (!employer) throw new Error("No employer profile");
+    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new Error("Employer account must be approved before payment.");
 
     const batch = await ctx.db.get(batchId);
     if (!batch || batch.employerId !== employer._id) throw new Error("Batch not found");
