@@ -595,9 +595,9 @@ export const resolveException = mutation({
     const exc = await ctx.db.get(exceptionId);
     if (!exc) throw new Error("Exception not found");
     // Employer users may only resolve their own exceptions; admins may resolve any.
-    if (user.role !== "admin" && exc.employerId) {
+    if (user.role !== "admin") {
       const mine = await getEmployerForUser(ctx, user);
-      if (!mine || mine._id !== exc.employerId) {
+      if (!mine || !exc.employerId || mine._id !== exc.employerId) {
         throw new Error("Not authorized to resolve this exception");
       }
     }
