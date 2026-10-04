@@ -39,7 +39,8 @@ export default function Overview() {
   const [wizardTick, setWizardTick] = useState(0);
   const [receiptBatchId, setReceiptBatchId] = useState<Id<"contributionBatches"> | null>(null);
 
-  const pfas = useQuery(api.pension.listPfas) ?? [];
+  const pfasQuery = useQuery(api.pension.listPfas);
+  const pfas = useMemo(() => pfasQuery ?? [], [pfasQuery]);
   const detail = useQuery(
     api.pension.getBatchDetail,
     receiptBatchId ? { batchId: receiptBatchId } : "skip",

@@ -12,10 +12,12 @@
     "github:manifest": "node scripts/generate-github-manifest.mjs",
     "test:security": "bun scripts/test-security.ts",
     "test:pricing": "bun scripts/test-pricing.ts",
-    "test:authz": "node scripts/test-authz-probe.mjs"
+    "test:authz": "node scripts/test-authz-probe.mjs",
+    "test:auth": "node scripts/test-auth-regression.mjs"
   },
   "dependencies": {
-    "@convex-dev/auth": "^0.0.90",
+    "@auth/core": "^0.41.3",
+    "@convex-dev/auth": "0.0.96",
     "@hookform/resolvers": "^5.2.2",
     "@jridgewell/trace-mapping": "^0.3.31",
     "@oslojs/crypto": "^1.0.1",

@@ -62,7 +62,8 @@ export function ContributionWizard({ onDone }: Props) {
     | undefined;
 
   const roster = useQuery(api.contributions.getReadyEmployees, { year, month });
-  const pfas = useQuery(api.pension.listPfas) ?? [];
+  const pfasQuery = useQuery(api.pension.listPfas);
+  const pfas = useMemo(() => pfasQuery ?? [], [pfasQuery]);
   const pfaCodeById = useMemo(() => new Map(pfas.map((p) => [p._id, p.code])), [pfas]);
   const pfaNameById = useMemo(() => new Map(pfas.map((p) => [p._id, p.name])), [pfas]);
 

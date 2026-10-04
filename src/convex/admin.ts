@@ -23,10 +23,10 @@ export const getAdminOverview = query({
   handler: async (ctx) => {
     await requireAdmin(ctx);
     const [employers, batches, exceptions, ledger, logs] = await Promise.all([
-      ctx.db.query("employers").collect(),
-      ctx.db.query("contributionBatches").collect(),
-      ctx.db.query("exceptions").withIndex("by_status", (q) => q.eq("status", "open")).collect(),
-      ctx.db.query("ledgerEntries").collect(),
+      ctx.db.query("employers").take(10_000),
+      ctx.db.query("contributionBatches").take(10_000),
+      ctx.db.query("exceptions").withIndex("by_status", (q) => q.eq("status", "open")).take(10_000),
+      ctx.db.query("ledgerEntries").take(10_000),
       ctx.db.query("integrationLogs").order("desc").take(20),
     ]);
     const feeRow = await ctx.db
@@ -44,8 +44,8 @@ export const getAdminOverview = query({
     // PFA statistics — real database values only (no fabricated metrics).
     const [pfas, settlements, records] = await Promise.all([
       ctx.db.query("pfas").collect(),
-      ctx.db.query("settlements").collect(),
-      ctx.db.query("contributionRecords").collect(),
+      ctx.db.query("settlements").take(10_000),
+      ctx.db.query("contributionRecords").take(10_000),
     ]);
     const pfasWithTransactions = new Set(settlements.map((s) => String(s.pfaId)));
     for (const r of records) pfasWithTransactions.add(String(r.pfaId));
@@ -84,9 +84,9 @@ export const listAllEmployers = query({
   args: {},
   handler: async (ctx) => {
     await requireAdmin(ctx);
-    const employers = await ctx.db.query("employers").collect();
-    const batches = await ctx.db.query("contributionBatches").collect();
-    const employees = await ctx.db.query("employees").collect();
+    const employers = await ctx.db.query("employers").take(10_000);
+    const batches = await ctx.db.query("contributionBatches").take(10_000);
+    const employees = await ctx.db.query("employees").take(10_000);
 
     return employers
       .sort((a, b) => b.createdAt - a.createdAt)
@@ -116,8 +116,8 @@ export const listAllExceptions = query({
   handler: async (ctx) => {
     await requireAdmin(ctx);
     const [exceptions, employers] = await Promise.all([
-      ctx.db.query("exceptions").collect(),
-      ctx.db.query("employers").collect(),
+      ctx.db.query("exceptions").take(10_000),
+      ctx.db.query("employers").take(10_000),
     ]);
     const nameById = new Map(employers.map((e) => [e._id, e.name]));
     return exceptions

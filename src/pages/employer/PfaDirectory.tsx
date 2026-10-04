@@ -57,7 +57,7 @@ export default function PfaDirectory() {
   const [filter, setFilter] = useState<string>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const rows = directory?.rows ?? [];
+  const rows = useMemo(() => directory?.rows ?? [], [directory]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

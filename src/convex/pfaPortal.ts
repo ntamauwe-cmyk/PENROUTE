@@ -92,7 +92,7 @@ export const claimAccess = mutation({
     const grants = await ctx.db
       .query("pfaAccessGrants")
       .withIndex("by_email", (q) => q.eq("email", email))
-      .collect();
+      .take(10_000);
     const grant = grants
       .filter((g) => g.status === "active")
       .sort((a, b) => b.createdAt - a.createdAt)[0];
@@ -123,8 +123,8 @@ export const claimAccess = mutation({
 
 async function maps(ctx: QueryCtx) {
   const [batches, employers] = await Promise.all([
-    ctx.db.query("contributionBatches").collect(),
-    ctx.db.query("employers").collect(),
+    ctx.db.query("contributionBatches").take(10_000),
+    ctx.db.query("employers").take(10_000),
   ]);
   return {
     batchById: new Map(batches.map((b) => [b._id, b])),
@@ -141,10 +141,10 @@ export const getOverview = query({
 
     const [pfa, settlements, records, employees, exceptions] = await Promise.all([
       ctx.db.get(pfaId),
-      ctx.db.query("settlements").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).collect(),
-      ctx.db.query("contributionRecords").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).collect(),
-      ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).collect(),
-      ctx.db.query("exceptions").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).collect(),
+      ctx.db.query("settlements").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
+      ctx.db.query("contributionRecords").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
+      ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
+      ctx.db.query("exceptions").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
     ]);
     if (!pfa) throw new Error("PFA record not found");
 
@@ -227,7 +227,7 @@ export const listSettlements = query({
     const settlements = await ctx.db
       .query("settlements")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-      .collect();
+      .take(10_000);
     const { batchById, employerById } = await maps(ctx);
 
     const rows = await Promise.all(
@@ -272,7 +272,7 @@ export const listContributions = query({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-      .collect();
+      .take(10_000);
     const { batchById, employerById } = await maps(ctx);
 
     return records
@@ -312,8 +312,8 @@ export const listEmployees = query({
     const employees = await ctx.db
       .query("employees")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-      .collect();
-    const employers = await ctx.db.query("employers").collect();
+      .take(10_000);
+    const employers = await ctx.db.query("employers").take(10_000);
     const employerById = new Map(employers.map((e) => [e._id, e]));
 
     return employees
@@ -337,9 +337,9 @@ export const listEmployers = query({
     const user = await requirePfaUser(ctx);
     const pfaId = user.pfaId!;
     const [employees, records, employers] = await Promise.all([
-      ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).collect(),
-      ctx.db.query("contributionRecords").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).collect(),
-      ctx.db.query("employers").collect(),
+      ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
+      ctx.db.query("contributionRecords").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
+      ctx.db.query("employers").take(10_000),
     ]);
     const employerById = new Map(employers.map((e) => [e._id, e]));
 
@@ -392,8 +392,8 @@ export const listExceptions = query({
     const exceptions = await ctx.db
       .query("exceptions")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-      .collect();
-    const employers = await ctx.db.query("employers").collect();
+      .take(10_000);
+    const employers = await ctx.db.query("employers").take(10_000);
     const employerById = new Map(employers.map((e) => [e._id, e]));
 
     return exceptions
@@ -426,8 +426,8 @@ export const adminListAccess = query({
   handler: async (ctx) => {
     await requireAdmin(ctx);
     const [grants, users, pfas] = await Promise.all([
-      ctx.db.query("pfaAccessGrants").collect(),
-      ctx.db.query("users").collect(),
+      ctx.db.query("pfaAccessGrants").take(10_000),
+      ctx.db.query("users").take(10_000),
       ctx.db.query("pfas").collect(),
     ]);
     const pfaById = new Map(pfas.map((p) => [p._id, p]));
@@ -475,7 +475,7 @@ export const adminProvisionAccess = mutation({
     if (!pfa) throw new Error("PFA not found");
     if (!isSelectable(pfa)) throw new Error("Cannot grant access to an inactive PFA");
 
-    const users = await ctx.db.query("users").collect();
+    const users = await ctx.db.query("users").take(10_000);
     const existing = users.find((u) => u.email && normEmail(u.email) === normalized);
 
     if (existing) {
@@ -491,7 +491,7 @@ export const adminProvisionAccess = mutation({
       const grants = await ctx.db
         .query("pfaAccessGrants")
         .withIndex("by_email", (q) => q.eq("email", normalized))
-        .collect();
+        .take(10_000);
       for (const g of grants) {
         if (g.status === "active") await ctx.db.patch(g._id, { status: "claimed", claimedAt: Date.now() });
       }
@@ -512,7 +512,7 @@ export const adminProvisionAccess = mutation({
     const grants = await ctx.db
       .query("pfaAccessGrants")
       .withIndex("by_email", (q) => q.eq("email", normalized))
-      .collect();
+      .take(10_000);
     const open = grants.find((g) => g.status === "active" || g.status === "claimed");
     if (open && open.pfaId === pfaId && open.status !== "revoked") {
       return { provisioned: "unchanged" as const };
@@ -586,7 +586,7 @@ export const adminUnlinkPfaUser = mutation({
       const grants = await ctx.db
         .query("pfaAccessGrants")
         .withIndex("by_email", (q) => q.eq("email", email))
-        .collect();
+        .take(10_000);
       for (const g of grants) {
         if (g.status !== "revoked") await ctx.db.patch(g._id, { status: "revoked", revokedAt: Date.now() });
       }

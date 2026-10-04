@@ -18,6 +18,7 @@
  */
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { v } from "convex/values";
 import { getEmployerForUser } from "./employers";
 import { hashApiKey } from "../lib/security";
 
@@ -281,3 +282,134 @@ export const verifyAndCleanup = internalMutation({
 
 // Re-exported for the probe script's type-free consumption.
 export type { CheckResult };
+
+/* ==========================================================================
+ * AUTH REGRESSION SUPPORT (used by scripts/test-auth-regression.mjs)
+ * ========================================================================== */
+
+/**
+ * Create synthetic RBAC probe identities prefixed TEST-AUTH- (an admin user
+ * and a PFA-portal user linked to a synthetic PFA). Sweeps leftovers from a
+ * previous interrupted run first, so it is rerunnable. Removed by
+ * `cleanupAuthProbeUsers` at the end of the regression run.
+ */
+export const createAuthProbeUsers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Sweep any previous probe rows (users first, then the PFA they point at).
+    for (const u of await ctx.db.query("users").collect()) {
+      if ((u.name ?? "").startsWith("TEST-AUTH-")) await ctx.db.delete(u._id);
+    }
+    for (const p of await ctx.db.query("pfas").collect()) {
+      if (p.name.startsWith("TEST-AUTH-")) await ctx.db.delete(p._id);
+    }
+    const pfaId = await ctx.db.insert("pfas", {
+      name: "TEST-AUTH-PFA",
+      code: "TEST-AUTH-999",
+      integrationMode: "manual",
+      active: true,
+      createdAt: Date.now(),
+    });
+    const adminUserId = await ctx.db.insert("users", {
+      name: "TEST-AUTH-ADMIN",
+      role: "admin",
+    });
+    const pfaUserId = await ctx.db.insert("users", {
+      name: "TEST-AUTH-PFA-USER",
+      role: "pfa",
+      pfaId,
+    });
+    return { adminUserId, pfaUserId, pfaId };
+  },
+});
+
+/** Remove every TEST-AUTH- probe row (idempotent). */
+export const cleanupAuthProbeUsers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let removed = 0;
+    for (const u of await ctx.db.query("users").collect()) {
+      if (!(u.name ?? "").startsWith("TEST-AUTH-")) continue;
+      for (const s of await ctx.db
+        .query("authSessions")
+        .withIndex("userId", (q) => q.eq("userId", u._id))
+        .collect()) {
+        await ctx.db.delete(s._id);
+      }
+      for (const a of await ctx.db
+        .query("authAccounts")
+        .withIndex("userIdAndProvider", (q) => q.eq("userId", u._id))
+        .collect()) {
+        await ctx.db.delete(a._id);
+      }
+      await ctx.db.delete(u._id);
+      removed++;
+    }
+    for (const p of await ctx.db.query("pfas").collect()) {
+      if (p.name.startsWith("TEST-AUTH-")) {
+        await ctx.db.delete(p._id);
+        removed++;
+      }
+    }
+    return { removed };
+  },
+});
+
+/**
+ * Remove the rows a lifecycle test user created (session, account, OTP codes,
+ * refresh tokens, optional rate-limit row keyed by email, then the user).
+ * Keeps regression runs repeatable without touching any real account.
+ */
+export const cleanupAuthRegression = internalMutation({
+  args: { userId: v.id("users"), email: v.optional(v.string()) },
+  handler: async (ctx, { userId, email }) => {
+    const removed = {
+      sessions: 0,
+      refreshTokens: 0,
+      accounts: 0,
+      codes: 0,
+      rateLimits: 0,
+      users: 0,
+    };
+    for (const a of await ctx.db
+      .query("authAccounts")
+      .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
+      .collect()) {
+      for (const c of await ctx.db
+        .query("authVerificationCodes")
+        .withIndex("accountId", (q) => q.eq("accountId", a._id))
+        .collect()) {
+        await ctx.db.delete(c._id);
+        removed.codes++;
+      }
+      await ctx.db.delete(a._id);
+      removed.accounts++;
+    }
+    for (const s of await ctx.db
+      .query("authSessions")
+      .withIndex("userId", (q) => q.eq("userId", userId))
+      .collect()) {
+      for (const rt of await ctx.db
+        .query("authRefreshTokens")
+        .withIndex("sessionId", (q) => q.eq("sessionId", s._id))
+        .collect()) {
+        await ctx.db.delete(rt._id);
+        removed.refreshTokens++;
+      }
+      await ctx.db.delete(s._id);
+      removed.sessions++;
+    }
+    if (email) {
+      for (const r of await ctx.db
+        .query("authRateLimits")
+        .withIndex("identifier", (q) => q.eq("identifier", email))
+        .collect()) {
+        await ctx.db.delete(r._id);
+        removed.rateLimits++;
+      }
+    }
+    await ctx.db.delete(userId);
+    removed.users++;
+    return removed;
+  },
+});

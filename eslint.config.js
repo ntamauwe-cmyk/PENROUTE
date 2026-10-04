@@ -6,7 +6,12 @@ import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default tseslint.config(
-  { ignores: ["dist"] },
+  {
+    // Convex codegen output — machine-written, type-checked by tsc, and
+    // forbidden to hand-edit; its defensive eslint-disable headers are
+    // meaningless to this config (they only produced unused-directive noise).
+    ignores: ["dist", "src/convex/_generated"],
+  },
   {
     extends: [
       js.configs.recommended,

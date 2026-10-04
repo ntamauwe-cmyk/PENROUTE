@@ -60,18 +60,18 @@ export const getEmployerDashboard = query({
     const batches = await ctx.db
       .query("contributionBatches")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
 
     const employees = await ctx.db
       .query("employees")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
 
     const openExceptions = await ctx.db
       .query("exceptions")
       .withIndex("by_status", (q) => q.eq("status", "open"))
       .filter((q) => q.eq(q.field("employerId"), employer._id))
-      .collect();
+      .take(10_000);
 
     const totalProcessed = batches
       .filter((b) => b.status === "completed")
@@ -116,7 +116,7 @@ export const getBatchDetail = query({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     const recordsSorted = records.sort((a, b) => a.fullName.localeCompare(b.fullName));
 
     const payment = await ctx.db
@@ -127,7 +127,7 @@ export const getBatchDetail = query({
     const settlements = await ctx.db
       .query("settlements")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
 
     const settlementsEnriched = await Promise.all(
       settlements.map(async (s) => {
@@ -146,12 +146,12 @@ export const getBatchDetail = query({
     const exceptions = await ctx.db
       .query("exceptions")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
 
     const pfaAcks = await ctx.db
       .query("pfaAcknowledgements")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
 
     return {
       batch,
@@ -203,7 +203,7 @@ export const getPfaAllocations = query({
     const settlements = await ctx.db
       .query("settlements")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-      .collect();
+      .take(10_000);
 
     const enriched = await Promise.all(
       settlements.map(async (s) => {
@@ -213,7 +213,7 @@ export const getPfaAllocations = query({
           await ctx.db
             .query("contributionRecords")
             .withIndex("by_pfa_batch", (q) => q.eq("pfaId", pfaId).eq("batchId", s.batchId))
-            .collect()
+            .take(10_000)
         ).sort((a, b) => a.fullName.localeCompare(b.fullName));
         return {
           settlement: s,
@@ -236,10 +236,10 @@ export const getAdminOverview = query({
     if (user?.role !== "admin") throw new Error("Admin access required");
 
     const [employers, batches, exceptions, ledger, logs] = await Promise.all([
-      ctx.db.query("employers").collect(),
-      ctx.db.query("contributionBatches").collect(),
-      ctx.db.query("exceptions").withIndex("by_status", (q) => q.eq("status", "open")).collect(),
-      ctx.db.query("ledgerEntries").collect(),
+      ctx.db.query("employers").take(10_000),
+      ctx.db.query("contributionBatches").take(10_000),
+      ctx.db.query("exceptions").withIndex("by_status", (q) => q.eq("status", "open")).take(10_000),
+      ctx.db.query("ledgerEntries").take(10_000),
       ctx.db.query("integrationLogs").order("desc").take(20),
     ]);
 
@@ -290,7 +290,7 @@ export const getBatchAudit = query({
       await ctx.db
         .query("auditLogs")
         .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.createdAt - a.createdAt);
   },
 });
@@ -309,7 +309,7 @@ export const listEmployerPayments = query({
       await ctx.db
         .query("payments")
         .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.initiatedAt - a.initiatedAt);
   },
 });
@@ -324,7 +324,7 @@ export const listEmployerLedger = query({
       await ctx.db
         .query("ledgerEntries")
         .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.entryDate - a.entryDate);
   },
 });
@@ -339,7 +339,7 @@ export const listEmployerExceptions = query({
       await ctx.db
         .query("exceptions")
         .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.createdAt - a.createdAt);
   },
 });
@@ -354,7 +354,7 @@ export const listEmployerAudit = query({
       await ctx.db
         .query("auditLogs")
         .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.createdAt - a.createdAt);
   },
 });
@@ -370,7 +370,7 @@ export const listEmployerEmployees = query({
     const employees = await ctx.db
       .query("employees")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
     return employees
       .sort((a, b) => a.fullName.localeCompare(b.fullName))
       .map((e) => ({

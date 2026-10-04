@@ -225,6 +225,81 @@ export const internalUpdatePr = internalAction({
   },
 });
 
+/** Read-only: current branch protection on `main` (404 → none configured). */
+export const internalGetBranchProtection = internalAction({
+  args: {},
+  handler: async (): Promise<{ ok: boolean; reason?: string; protection?: unknown }> => {
+    const token = await requireToken();
+    try {
+      const res = await fetch(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/main/protection`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+        },
+      );
+      if (res.status === 404) return { ok: true, protection: null };
+      if (!res.ok) {
+        return { ok: false, reason: `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}` };
+      }
+      return { ok: true, protection: await res.json() };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
+/**
+ * Configure standard protection for `main`: PRs only, the CI `checks` job
+ * required before merge, no force pushes, no deletions. Admin bypass left ON
+ * so the audited operator path is not bricked; adjust via GitHub settings if
+ * stricter enforcement is wanted.
+ */
+export const internalSetBranchProtection = internalAction({
+  args: {},
+  handler: async (): Promise<{ ok: boolean; reason?: string; status?: number }> => {
+    const token = await requireToken();
+    try {
+      const body = {
+        required_status_checks: { strict: true, contexts: ["checks"] },
+        enforce_admins: false,
+        required_pull_request_reviews: {
+          required_approving_review_count: 0,
+          dismiss_stale_reviews: false,
+          require_code_owner_reviews: false,
+          require_last_push_approval: false,
+        },
+        restrictions: null,
+        allow_force_pushes: false,
+        allow_deletions: false,
+        required_conversation_resolution: false,
+        required_linear_history: false,
+      };
+      const res = await fetch(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/main/protection`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+      );
+      const text = await res.text();
+      if (!res.ok) return { ok: false, status: res.status, reason: text.slice(0, 300) };
+      return { ok: true, status: res.status };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
 /** Read-only diagnostics: fetch CI job logs (plain text, via redirect). */
 export const internalJobLogs = internalAction({
   args: { jobId: v.string(), maxChars: v.optional(v.number()) },

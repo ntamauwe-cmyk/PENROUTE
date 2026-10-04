@@ -28,7 +28,7 @@ export const internalPendings = internalQuery({
       .query("settlements")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
       .filter((q) => q.or(q.eq(q.field("status"), "pending"), q.eq(q.field("status"), "processing")))
-      .collect()
+      .take(10_000)
       .then((rows) =>
         rows.map((r) => ({
           _id: r._id,
@@ -60,7 +60,7 @@ export const internalRecords = internalQuery({
     return await ctx.db
       .query("contributionRecords")
       .withIndex("by_pfa_batch", (q) => q.eq("pfaId", pfaId).eq("batchId", batchId))
-      .collect()
+      .take(10_000)
       .then((rows) =>
         rows
           .filter((r) => r.validationStatus === "valid")

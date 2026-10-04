@@ -205,9 +205,9 @@ export const verifyIntegrity = internalQuery({
   args: {},
   handler: async (ctx) => {
     const pfas = await ctx.db.query("pfas").collect();
-    const employees = await ctx.db.query("employees").collect();
-    const records = await ctx.db.query("contributionRecords").collect();
-    const settlements = await ctx.db.query("settlements").collect();
+    const employees = await ctx.db.query("employees").take(10_000);
+    const records = await ctx.db.query("contributionRecords").take(10_000);
+    const settlements = await ctx.db.query("settlements").take(10_000);
 
     const orphaned = async (refs: { pfaId: Id<"pfas"> }[]) => {
       let count = 0;
@@ -261,15 +261,15 @@ async function statsForPfa(
   const employees = await ctx.db
     .query("employees")
     .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-    .collect();
+    .take(10_000);
   const records = await ctx.db
     .query("contributionRecords")
     .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-    .collect();
+    .take(10_000);
   const settlements = await ctx.db
     .query("settlements")
     .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-    .collect();
+    .take(10_000);
 
   const emp = scope.employerId ? employees.filter((e) => e.employerId === scope.employerId) : employees;
   const rec = scope.employerId ? records.filter((r) => r.employerId === scope.employerId) : records;
@@ -366,7 +366,7 @@ export const getDetail = query({
     const employees = await ctx.db
       .query("employees")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-      .collect();
+      .take(10_000);
 
     // Employers using this PFA (with per-employer head counts).
     const employerCountMap = new Map<string, number>();
@@ -387,7 +387,7 @@ export const getDetail = query({
       await ctx.db
         .query("settlements")
         .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.instructedAt - a.instructedAt);
     const transactionHistory = (
       await Promise.all(
@@ -415,7 +415,7 @@ export const getDetail = query({
       await ctx.db
         .query("ledgerEntries")
         .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.entryDate - a.entryDate);
     const reconciliationHistory = ledger.slice(0, 100).map((l) => ({
       entryRef: l.entryRef,
@@ -431,7 +431,7 @@ export const getDetail = query({
       await ctx.db
         .query("exceptions")
         .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-        .collect()
+        .take(10_000)
     ).sort((a, b) => b.createdAt - a.createdAt);
 
     const cfg = pfa.endpointConfig as { endpoint?: string; apiSecret?: string; hmacSecret?: string } | undefined;
@@ -471,35 +471,35 @@ export const getPfaReports = query({
     const pfas = (await ctx.db.query("pfas").collect()).sort((a, b) => a.name.localeCompare(b.name));
 
     const employees = isAdmin
-      ? await ctx.db.query("employees").collect()
+      ? await ctx.db.query("employees").take(10_000)
       : employer
         ? await ctx.db
             .query("employees")
             .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-            .collect()
+            .take(10_000)
         : [];
     const records = isAdmin
-      ? await ctx.db.query("contributionRecords").collect()
+      ? await ctx.db.query("contributionRecords").take(10_000)
       : employer
         ? await ctx.db
             .query("contributionRecords")
             .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-            .collect()
+            .take(10_000)
         : [];
     const batches = isAdmin
-      ? await ctx.db.query("contributionBatches").collect()
+      ? await ctx.db.query("contributionBatches").take(10_000)
       : employer
         ? await ctx.db
             .query("contributionBatches")
             .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-            .collect()
+            .take(10_000)
         : [];
     const batchIds = new Set(batches.map((b) => String(b._id)));
 
-    const settlements = (await ctx.db.query("settlements").collect()).filter((s) =>
+    const settlements = (await ctx.db.query("settlements").take(10_000)).filter((s) =>
       isAdmin ? true : batchIds.has(String(s.batchId)),
     );
-    const ledger = (await ctx.db.query("ledgerEntries").collect()).filter((l) =>
+    const ledger = (await ctx.db.query("ledgerEntries").take(10_000)).filter((l) =>
       isAdmin ? true : l.batchId ? batchIds.has(String(l.batchId)) : false,
     );
 

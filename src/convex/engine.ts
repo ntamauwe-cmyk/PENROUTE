@@ -76,7 +76,7 @@ export const getDraftSummary = query({
     const batches = await ctx.db
       .query("contributionBatches")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
     const batch = batches.find(
       (b) => b.contributionYear === year && b.contributionMonth === month && b.status !== "failed",
     );
@@ -85,7 +85,7 @@ export const getDraftSummary = query({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_batch", (q) => q.eq("batchId", batch._id))
-      .collect();
+      .take(10_000);
 
     const valid = records.filter((r) => r.validationStatus === "valid");
     const employeeSum = valid.reduce((s, r) => s + r.employeeContribution, 0);
@@ -312,7 +312,7 @@ async function createBatchCore(
     const allBatches = await ctx.db
       .query("contributionBatches")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
     const periodBatch = allBatches.find(
       (b) => b.contributionYear === year && b.contributionMonth === month && b.status !== "failed",
     );
@@ -484,7 +484,7 @@ export const payBatch = mutation({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     const valid = records.filter((r) => r.validationStatus === "valid");
     if (valid.length === 0) throw new Error("No valid records to pay");
 
@@ -834,7 +834,7 @@ export const finalizeLivePaymentSystem = internalMutation({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_batch", (q) => q.eq("batchId", payment.batchId))
-      .collect();
+      .take(10_000);
     const valid = records.filter((r) => r.validationStatus === "valid");
     const pensionKobo = valid.reduce((s, r) => s + r.totalAmount, 0);
     const charge = await syncBillingCharge(ctx, {
@@ -925,7 +925,7 @@ export const finalizeLivePayment = internalMutation({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     const valid = records.filter((r) => r.validationStatus === "valid");
     const pensionKobo = valid.reduce((s, r) => s + r.totalAmount, 0);
     const charge = await syncBillingCharge(ctx, {
@@ -1006,7 +1006,7 @@ export const processPipeline = internalMutation({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     const valid = records.filter((r) => r.validationStatus === "valid");
 
     if (batch.allocationStatus !== "allocated") {
@@ -1042,7 +1042,7 @@ export const processPipeline = internalMutation({
     const existingSettlements = await ctx.db
       .query("settlements")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     // Settlement entries: existing docs, or the lightweight instruction we just
     // inserted (id + ref, without a status field yet on this in-memory copy).
     type SettlementEntry =
@@ -1142,7 +1142,7 @@ export const processPipeline = internalMutation({
     const finalSettlements = await ctx.db
       .query("settlements")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     const settledSettlements = finalSettlements.filter((s) => s.status === "settled");
     // LIVE dispatch: hand every not-yet-confirmed instruction to the dispatch
     // action (pending = never sent / retry after failure; processing = PFA
@@ -1183,7 +1183,7 @@ export const processPipeline = internalMutation({
     const existingAcks = await ctx.db
       .query("pfaAcknowledgements")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     const ackedSettlements = new Set(existingAcks.map((a) => String(a.settlementId)));
 
     for (const settlement of finalSettlements) {
@@ -1274,7 +1274,7 @@ export const processPipeline = internalMutation({
     const ledgerRows = await ctx.db
       .query("ledgerEntries")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .collect();
+      .take(10_000);
     for (const row of ledgerRows) {
       await ctx.db.patch(row._id, {
         reconciliationStatus: reconciliationStatus === "reconciled" ? "reconciled" : "exception",

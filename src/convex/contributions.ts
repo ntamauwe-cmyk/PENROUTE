@@ -28,13 +28,13 @@ export const getReadyEmployees = query({
     const employees = await ctx.db
       .query("employees")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
 
     // find batch for this period if one exists
     const allBatches = await ctx.db
       .query("contributionBatches")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
     const existingBatch =
       allBatches.find(
         (b) =>
@@ -47,7 +47,7 @@ export const getReadyEmployees = query({
       ? await ctx.db
           .query("contributionRecords")
           .withIndex("by_batch", (q) => q.eq("batchId", existingBatch._id))
-          .collect()
+          .take(10_000)
       : [];
 
     const recordByPin = new Map(records.map((r) => [r.pensionPin, r]));
@@ -92,7 +92,7 @@ export const getContributionHistory = query({
     const batches = await ctx.db
       .query("contributionBatches")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
 
     return {
       employer: safeEmployer(employer),

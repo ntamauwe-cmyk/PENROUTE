@@ -34,7 +34,7 @@ async function stagePushImpl(ctx: MutationCtx, pushId: string) {
     const old = await ctx.db
       .query("githubPushFiles")
       .withIndex("by_push", (q) => q.eq("pushId", pushId))
-      .collect();
+      .take(10_000);
     for (const row of old) await ctx.db.delete(row._id);
     const now = Date.now();
     for (const f of files) {
@@ -82,7 +82,7 @@ export const internalStagedPage = internalQuery({
     const rows = await ctx.db
       .query("githubPushFiles")
       .withIndex("by_push", (q) => q.eq("pushId", pushId))
-      .collect();
+      .take(10_000);
     const staged = rows.filter((r) => r.status === "staged");
     const seed = rows.find((r) => r.path === "README.md") ?? rows[0];
     return {
@@ -114,7 +114,7 @@ export const githubPushStatus = query({
     const rows = await ctx.db
       .query("githubPushFiles")
       .withIndex("by_push", (q) => q.eq("pushId", pushId))
-      .collect();
+      .take(10_000);
     const byStatus = rows.reduce<Record<string, number>>((acc, r) => {
       acc[r.status] = (acc[r.status] ?? 0) + 1;
       return acc;

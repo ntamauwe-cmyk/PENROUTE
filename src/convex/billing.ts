@@ -47,7 +47,7 @@ async function subscriptionForPeriod(
   const subs = await ctx.db
     .query("employerSubscriptions")
     .withIndex("by_employer", (q) => q.eq("employerId", employerId))
-    .collect();
+    .take(10_000);
   const active = subs.find((s) => s.status === "active");
   if (!active) return null;
   const { start, end } = periodBounds(periodKey);
@@ -207,7 +207,7 @@ export const getEmployerBilling = query({
     const charges = await ctx.db
       .query("billingCharges")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
 
     // One charge per batch (one batch per employer per month) → grouping is
     // bounded by the number of billing periods, never by record volume.
@@ -269,7 +269,7 @@ export const getEmployerBilling = query({
     const batches = await ctx.db
       .query("contributionBatches")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
-      .collect();
+      .take(10_000);
     const pendingBatch = batches.find(
       (b) =>
         b.contributionYear === now.getFullYear() &&
@@ -288,7 +288,7 @@ export const getEmployerBilling = query({
       const records = await ctx.db
         .query("contributionRecords")
         .withIndex("by_batch", (q) => q.eq("batchId", pendingBatch._id))
-        .collect();
+        .take(10_000);
       const valid = records.filter((r) => r.validationStatus === "valid");
       if (valid.length > 0) {
         const quote = await quoteForPostings(ctx, valid.length);
@@ -369,7 +369,7 @@ export const getAdminRevenueReport = query({
       const rows = await ctx.db
         .query("billingCharges")
         .withIndex("by_period", (q) => q.eq("periodKey", periodKey))
-        .collect();
+        .take(10_000);
       const paid = rows.filter((r) => r.status === "paid");
       let mPostings = 0;
       let mFee = 0;
@@ -425,7 +425,7 @@ export const getAdminRevenueReport = query({
       .slice(0, 100);
 
     // Subscription revenue: active assignments overlapping each window month.
-    const subs = await ctx.db.query("employerSubscriptions").collect();
+    const subs = await ctx.db.query("employerSubscriptions").take(10_000);
     let subscriptionRevenueKobo = 0;
     for (const periodKey of periodKeys) {
       const { start, end } = periodBounds(periodKey);
@@ -520,7 +520,7 @@ export const backfillBillingCharges = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await requireAdmin(ctx);
-    const batches = await ctx.db.query("contributionBatches").collect();
+    const batches = await ctx.db.query("contributionBatches").take(10_000);
     let created = 0;
     for (const batch of batches) {
       if (batch.paymentStatus !== "successful" && batch.paymentStatus !== "processing") continue;
@@ -547,8 +547,8 @@ export const listChargesForAdmin = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
     await requireAdmin(ctx);
-    const rows = await ctx.db.query("billingCharges").collect();
-    const employers = await ctx.db.query("employers").collect();
+    const rows = await ctx.db.query("billingCharges").take(10_000);
+    const employers = await ctx.db.query("employers").take(10_000);
     const nameById = new Map(employers.map((e) => [String(e._id), e.name]));
     return rows
       .sort((a, b) => b.createdAt - a.createdAt)

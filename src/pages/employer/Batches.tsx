@@ -18,7 +18,7 @@ import { fmtDate, fmtNaira, monthName } from "@/lib/pension";
 
 export default function Batches() {
   const dash = useQuery(api.pension.getEmployerDashboard);
-  const batches = dash?.batches ?? [];
+  const batches = useMemo(() => dash?.batches ?? [], [dash]);
   const loading = dash === undefined;
   const [certBatchId, setCertBatchId] = useState<string | null>(null);
   const detail = useQuery(
