@@ -53,9 +53,25 @@ export const initializeLivePayment = action({
     paymentRef: v.string(),
     amountKobo: v.number(),
     email: v.string(),
-    callbackUrl: v.optional(v.string()),
   },
-  handler: async (_ctx, { paymentRef, amountKobo, email, callbackUrl }): Promise<RailResult> => {
+  handler: async (ctx, { paymentRef, amountKobo, email }): Promise<RailResult> => {
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller) return { accepted: false, reason: "Authentication required" };
+    const stored = await ctx.runQuery(internal.engine.getPaymentByRef, { paymentRef });
+    const context = stored
+      ? await ctx.runQuery(api.engine.getLivePaymentContext, { batchId: stored.batchId })
+      : null;
+    if (
+      !stored ||
+      stored.status !== "initiated" ||
+      stored.rail !== "paystack" ||
+      !context ||
+      context.paymentRef !== paymentRef ||
+      context.expectedKobo !== amountKobo ||
+      context.payerEmail !== email
+    ) {
+      return { accepted: false, reason: "No matching authorized pending payment" };
+    }
     const key = process.env.PAYSTACK_SECRET_KEY;
     if (!key) {
       return { accepted: false, reason: "PAYSTACK_SECRET_KEY is not configured" };
@@ -72,7 +88,6 @@ export const initializeLivePayment = action({
           amount: amountKobo, // Paystack expects kobo
           email,
           currency: "NGN",
-          callbackUrl,
           metadata: { purpose: "pension_contribution", paymentRef },
         }),
       });
@@ -105,7 +120,16 @@ export const initializeLivePayment = action({
  */
 export const verifyLivePayment = action({
   args: { paymentRef: v.string() },
-  handler: async (_ctx, { paymentRef }) => {
+  handler: async (ctx, { paymentRef }) => {
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller) return { ok: false as const, reason: "Authentication required" };
+    const stored = await ctx.runQuery(internal.engine.getPaymentByRef, { paymentRef });
+    const context = stored
+      ? await ctx.runQuery(api.engine.getLivePaymentContext, { batchId: stored.batchId })
+      : null;
+    if (!stored || stored.rail !== "paystack" || !context || context.paymentRef !== paymentRef) {
+      return { ok: false as const, reason: "No authorized payment found for this reference" };
+    }
     const key = process.env.PAYSTACK_SECRET_KEY;
     if (!key) {
       return { ok: false as const, reason: "PAYSTACK_SECRET_KEY is not configured" };
