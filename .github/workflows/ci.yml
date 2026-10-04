@@ -1,0 +1,28 @@
+name: CI
+
+# Minimal validation workflow for Penroute: typecheck, lint and the
+# security/pricing regression suites. It has NO deployment step — merging to
+# main never releases anything.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+      - name: Typecheck
+        run: bunx tsc -b --noEmit
+      - name: Lint
+        run: bun run lint
+      - name: Security regression tests
+        run: bun scripts/test-security.ts
+      - name: Pricing engine tests
+        run: bun scripts/test-pricing.ts
