@@ -82,7 +82,7 @@ export const paystackWebhook = httpAction(async (ctx, request) => {
 
   let event: {
     event: string;
-    data?: { reference?: string; amount?: number; fees?: number; status?: string };
+    data?: { reference?: string; amount?: number; fees?: number; status?: string; currency?: string };
   };
   try {
     event = JSON.parse(raw);
@@ -110,11 +110,12 @@ export const paystackWebhook = httpAction(async (ctx, request) => {
     if (payment.status === "successful") {
       return new Response(JSON.stringify({ received: true, alreadyProcessed: true }), { status: 200 });
     }
-    // Defence-in-depth amount check — an underpayment must never finalize.
-    if (event.data?.amount !== undefined && event.data.amount < payment.amount) {
+    // Require exact provider-reported amount and currency before finalization.
+    // Missing values are rejected rather than treated as trusted.
+    if (event.data?.status !== "success" || event.data?.amount !== payment.amount || event.data?.currency !== "NGN") {
       await ctx.runMutation(engineApi.markLivePaymentFailedSystem, {
         paymentId: payment._id,
-        reason: `Webhook amount ${event.data.amount}k is below expected ${payment.amount}k`,
+        reason: "Webhook status, exact amount, or currency did not match the stored payment",
       });
       return new Response(JSON.stringify({ received: true, mismatch: true }), { status: 200 });
     }
