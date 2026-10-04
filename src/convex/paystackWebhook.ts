@@ -26,7 +26,6 @@ const engineApi = api.engine as unknown as {
 // In-memory per-isolate idempotency. The database-level guards in
 // finalizeLivePaymentSystem (status check + idempotent pipeline) are the
 // durable protection; this just avoids repeat work on redeliveries.
-const processedEvents = new Set<string>();
 
 function timingSafeEqualHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -95,11 +94,7 @@ export const paystackWebhook = httpAction(async (ctx, request) => {
     return new Response(JSON.stringify({ received: true }), { status: 200 });
   }
 
-  const dedupeKey = `${event.event}:${reference}:${event.data?.amount ?? ""}`;
-  if (processedEvents.has(dedupeKey)) {
-    return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 });
-  }
-  processedEvents.add(dedupeKey);
+  // Durable payment status guards below handle duplicate provider deliveries.
 
   if (event.event === "charge.success") {
     // Look the payment up by the provider reference — never trust the payload.
