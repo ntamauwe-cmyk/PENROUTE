@@ -23,7 +23,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const PAYSTACK_BASE = "https://api.paystack.co";
 
@@ -135,6 +135,7 @@ export const verifyLivePayment = action({
         amountKobo: data.data.amount,
         providerFeesKobo: data.data.fees ?? 0,
         currency: data.data.currency,
+        reference: data.data.reference,
       };
     } catch (e) {
       return {
@@ -142,6 +143,57 @@ export const verifyLivePayment = action({
         reason: e instanceof Error ? e.message : "Paystack verification failed",
       };
     }
+  },
+});
+
+/**
+ * Verify a checkout on the server and finalize only the exact stored payment.
+ * The browser supplies a batch ID only; reference, amount and payer are loaded
+ * from the authenticated employer's server-side payment record.
+ */
+export const confirmLivePayment = action({
+  args: { batchId: v.id("contributionBatches") },
+  handler: async (ctx, { batchId }) => {
+    const context = await ctx.runQuery(api.engine.getLivePaymentContext, { batchId });
+    if (!context) throw new Error("No authorized pending payment for this batch");
+    const payment = await ctx.runQuery(internal.engine.getPaymentByRef, {
+      paymentRef: context.paymentRef,
+    });
+    if (!payment || payment.batchId !== batchId || payment.status === "successful") {
+      if (payment?.status === "successful") return { ok: true as const, outcome: "success" as const, alreadyProcessed: true };
+      throw new Error("Pending payment record not found");
+    }
+    if (payment.rail !== "paystack" || payment.amount !== context.expectedKobo) {
+      throw new Error("Stored payment details do not match the checkout context");
+    }
+    const verified = await ctx.runAction(api.payments.verifyLivePayment, {
+      paymentRef: payment.paymentRef,
+    });
+    if (!verified.ok) throw new Error(verified.reason ?? "Paystack verification failed");
+    if (verified.outcome !== "success") {
+      return { ok: true as const, outcome: verified.outcome };
+    }
+    if (
+      verified.reference !== payment.paymentRef ||
+      verified.amountKobo !== payment.amount ||
+      verified.currency !== "NGN"
+    ) {
+      await ctx.runMutation(internal.engine.markLivePaymentFailedSystem, {
+        paymentId: payment._id,
+        reason: "Paystack verification reference, exact amount, or currency mismatch",
+      });
+      throw new Error("Payment details do not match the expected amount, currency, or reference");
+    }
+    await ctx.runMutation(internal.engine.finalizeLivePaymentSystem, {
+      paymentId: payment._id,
+      providerFeesKobo: verified.providerFeesKobo,
+    });
+    return {
+      ok: true as const,
+      outcome: "success" as const,
+      amountKobo: verified.amountKobo,
+      currency: verified.currency,
+    };
   },
 });
 
