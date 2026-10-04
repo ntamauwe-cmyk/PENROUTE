@@ -24,6 +24,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
 import {
   CYCLE_STAGES,
   cycleStageIndex,
@@ -48,6 +49,9 @@ export default function Overview() {
   const seed = useMutation(api.pension.seedDemoData);
   const claim = useMutation(api.pension.claimDemoEmployer);
   const syncPfas = useMutation(api.pension.syncPfaDirectory);
+  const { user } = useAuth();
+  const bootstrap = useQuery(api.pension.bootstrapAdminStatus);
+  const claimAdmin = useMutation(api.pension.claimPlatformAdmin);
   const [seeding, setSeeding] = useState(false);
 
   const latest = batches[0] ?? null;
@@ -71,6 +75,28 @@ export default function Overview() {
       setSeeding(false);
     }
   };
+
+  // One-time bootstrap: demo loading is admin-only, but a fresh deployment
+  // has no admin yet — the first signed-in email account can claim the role
+  // and then load the demo in one go. Locked forever once an admin exists.
+  const bootstrapAdminThenSeed = async () => {
+    try {
+      await claimAdmin({});
+      toast.success("Platform admin assigned to this account");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not claim platform admin");
+      return;
+    }
+    await ensureSeed();
+  };
+
+  const canBootstrap = Boolean(
+    bootstrap?.available &&
+      bootstrap?.eligible &&
+      user &&
+      !user.isAnonymous &&
+      user.role !== "admin",
+  );
 
   if (loading) {
     return (
@@ -102,6 +128,16 @@ export default function Overview() {
             {seeding ? <RefreshCw className="size-4 animate-spin" /> : <Plus className="size-4" />}
             Load demo workspace
           </Button>
+          {canBootstrap && (
+            <Button
+              variant="outline"
+              className="mt-3 w-full font-medium"
+              onClick={bootstrapAdminThenSeed}
+              disabled={seeding}
+            >
+              Make this account the platform admin (one-time setup)
+            </Button>
+          )}
         </div>
       </main>
     );

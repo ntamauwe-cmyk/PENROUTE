@@ -402,13 +402,63 @@ export const claimDemoEmployer = mutation({
       .withIndex("by_status", (q) => q.eq("status", "active"))
       .first();
     if (!active) throw new Error("No employer seeded yet");
-    if (!active.ownerUserId) {
+    // Ownership must MOVE with the claim: workspace resolution
+    // (getEmployerForUser) only grants access to the employer's owner, so
+    // linking the claimer without transferring ownership left them with a
+    // dead workspace (dashboard stayed null after a "successful" claim).
+    if (active.ownerUserId !== user._id) {
       await ctx.db.patch(active._id, { ownerUserId: user._id });
     }
     if (!user.employerId) {
       await ctx.db.patch(user._id, { employerId: active._id });
     }
     return { employerId: active._id as string, name: active.name };
+  },
+});
+
+/**
+ * ONE-TIME PLATFORM-ADMIN BOOTSTRAP — sign-up creates role-less users and no
+ * routine flow ever grants `admin`, which would leave every admin gate (demo
+ * loading, the admin console, pricing, fee saves) permanently closed on a
+ * fresh deployment. The first signed-in, non-anonymous account may claim the
+ * role while NO admin exists; as soon as one does, this door locks forever.
+ * Guest/anonymous sessions are never eligible (enforced server-side).
+ */
+export const bootstrapAdminStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return { available: false, eligible: false };
+    if (user.role === "admin") return { available: false, eligible: false };
+    const users = await ctx.db.query("users").take(10_000);
+    const available = !users.some((u) => u.role === "admin");
+    return { available, eligible: !user.isAnonymous && Boolean(user.email) };
+  },
+});
+
+/** Claim platform-admin — succeeds only while no admin exists at all. */
+export const claimPlatformAdmin = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) throw new Error("Not authenticated");
+    if (user.isAnonymous) throw new Error("Sign in with your email to claim platform admin");
+    if (!user.email) throw new Error("A signed-in email account is required to claim platform admin");
+    if (user.role === "admin") return { ok: true, unchanged: true };
+    const users = await ctx.db.query("users").take(10_000);
+    if (users.some((u) => u.role === "admin")) {
+      throw new Error("Platform admin is already configured");
+    }
+    await ctx.db.patch(user._id, { role: "admin" });
+    await ctx.db.insert("auditLogs", {
+      actor: user.email,
+      action: "platform_admin_bootstrapped",
+      entityType: "user",
+      entityId: user._id,
+      details: `${user.email} claimed the one-time platform-admin bootstrap (no admin existed)`,
+      createdAt: Date.now(),
+    });
+    return { ok: true };
   },
 });
 

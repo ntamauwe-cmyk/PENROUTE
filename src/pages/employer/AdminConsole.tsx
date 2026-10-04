@@ -40,6 +40,26 @@ import { toast } from "sonner";
  */
 export default function AdminConsole() {
   const { user } = useAuth();
+  const bootstrap = useQuery(api.pension.bootstrapAdminStatus);
+  const claimAdmin = useMutation(api.pension.claimPlatformAdmin);
+  const [claiming, setClaiming] = useState(false);
+
+  // One-time bootstrap: this deployment starts with no admin at all, so the
+  // first signed-in email account can claim the role from this very screen.
+  const claimAdminNow = async () => {
+    setClaiming(true);
+    try {
+      await claimAdmin({});
+      toast.success("Platform admin assigned — welcome aboard");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not claim platform admin");
+    } finally {
+      setClaiming(false);
+    }
+  };
+  const canBootstrap = Boolean(
+    bootstrap?.available && bootstrap?.eligible && user && !user.isAnonymous && user.role !== "admin",
+  );
 
   if (user === undefined) {
     return (
@@ -54,6 +74,17 @@ export default function AdminConsole() {
         <PageHeader title="Admin console" />
         <div className="pen-card p-8 text-center text-sm text-muted-foreground">
           Administrator access is required to use the admin console.
+          {canBootstrap && (
+            <div className="mt-4">
+              <Button
+                className="bg-[#007A4D] font-semibold hover:bg-[#006A43]"
+                onClick={claimAdminNow}
+                disabled={claiming}
+              >
+                {claiming ? "Assigning…" : "Make this account the platform admin (one-time setup)"}
+              </Button>
+            </div>
+          )}
         </div>
       </DashboardShell>
     );

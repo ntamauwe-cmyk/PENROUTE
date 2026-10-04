@@ -54,8 +54,11 @@ export default function Onboarding() {
   const loadDemo = async () => {
     setSaving(true);
     try {
-      const res = await seed({});
-      if (res.seeded) await claim({});
+      await seed({});
+      // Always claim: seed returns `already_seeded` on pre-existing
+      // deployments, and skipping the claim there left the user without a
+      // workspace (the demo link never happened).
+      await claim({});
       navigate("/dashboard");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load demo data");
