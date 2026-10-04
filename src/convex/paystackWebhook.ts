@@ -14,6 +14,7 @@
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import type { FunctionReference } from "convex/server";
+import { readCapped } from "../lib/security";
 
 // Generated types have caught up — resolve the internal references directly.
 // (Kept behind a typed accessor so a future rename fails loudly, not silently.)
@@ -23,10 +24,9 @@ const engineApi = api.engine as unknown as {
   markLivePaymentFailedSystem: FunctionReference<"mutation">;
 };
 
-// In-memory per-isolate idempotency. The database-level guards in
-// finalizeLivePaymentSystem (status check + idempotent pipeline) are the
-// durable protection; this just avoids repeat work on redeliveries.
-const processedEvents = new Set<string>();
+// Durable, database-backed idempotency: finalizeLivePaymentSystem and
+// markLivePaymentFailedSystem are guarded by the stored payment status, so
+// duplicate, delayed or replayed provider deliveries are harmless no-ops.
 
 function timingSafeEqualHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -55,7 +55,17 @@ async function verifyPaystackSignature(raw: string, signature: string, key: stri
 
 export const paystackWebhook = httpAction(async (ctx, request) => {
   const signature = request.headers.get("x-paystack-signature");
-  const raw = await request.text();
+  let raw: string;
+  try {
+    // Size cap BEFORE any signature work: an unauthenticated caller cannot
+    // stream an unbounded body into memory (Paystack payloads are small).
+    raw = await readCapped(request.body, 1_000_000);
+  } catch {
+    return new Response(JSON.stringify({ error: "payload too large" }), {
+      status: 413,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   // The secret lives only in the server environment (Keys tab). Webhooks
   // without a configured key or signature are rejected outright.
@@ -82,7 +92,7 @@ export const paystackWebhook = httpAction(async (ctx, request) => {
 
   let event: {
     event: string;
-    data?: { reference?: string; amount?: number; fees?: number; status?: string };
+    data?: { reference?: string; amount?: number; fees?: number; status?: string; currency?: string };
   };
   try {
     event = JSON.parse(raw);
@@ -95,11 +105,7 @@ export const paystackWebhook = httpAction(async (ctx, request) => {
     return new Response(JSON.stringify({ received: true }), { status: 200 });
   }
 
-  const dedupeKey = `${event.event}:${reference}:${event.data?.amount ?? ""}`;
-  if (processedEvents.has(dedupeKey)) {
-    return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 });
-  }
-  processedEvents.add(dedupeKey);
+  // Durable payment status guards below handle duplicate provider deliveries.
 
   if (event.event === "charge.success") {
     // Look the payment up by the provider reference — never trust the payload.
@@ -110,11 +116,12 @@ export const paystackWebhook = httpAction(async (ctx, request) => {
     if (payment.status === "successful") {
       return new Response(JSON.stringify({ received: true, alreadyProcessed: true }), { status: 200 });
     }
-    // Defence-in-depth amount check — an underpayment must never finalize.
-    if (event.data?.amount !== undefined && event.data.amount < payment.amount) {
+    // Require exact provider-reported amount and currency before finalization.
+    // Missing values are rejected rather than treated as trusted.
+    if (event.data?.status !== "success" || event.data?.amount !== payment.amount || event.data?.currency !== "NGN") {
       await ctx.runMutation(engineApi.markLivePaymentFailedSystem, {
         paymentId: payment._id,
-        reason: `Webhook amount ${event.data.amount}k is below expected ${payment.amount}k`,
+        reason: "Webhook status, exact amount, or currency did not match the stored payment",
       });
       return new Response(JSON.stringify({ received: true, mismatch: true }), { status: 200 });
     }

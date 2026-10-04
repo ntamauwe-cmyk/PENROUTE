@@ -21,8 +21,8 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { action, internalAction, type ActionCtx } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { createHash } from "node:crypto";
 
 const GITHUB_API = "https://api.github.com";
@@ -33,6 +33,38 @@ interface RepoInfo {
   private: boolean;
   default_branch: string;
   permissions?: { push?: boolean };
+}
+
+/** Explicit result shapes keep the module's types from becoming circular
+ *  through the generated `api`/`internal` references below (same pattern as
+ *  payments.ts). */
+type VerifyResult = {
+  ok: boolean;
+  fullName?: string;
+  isPrivate?: boolean;
+  defaultBranch?: string;
+  reason?: string;
+};
+
+type PushResult =
+  | { ok: false; error: string; failures?: { path: string; error: string }[] }
+  | {
+      ok: true;
+      commitSha: string;
+      commitUrl: string;
+      branch: string;
+      filesCommitted: number;
+      filesUnchanged: number;
+      filesFailed: number;
+      failures?: { path: string; error: string }[];
+    };
+
+/** Admin-only: these actions use the operator's GitHub token — anonymous and
+ *  non-admin callers are rejected before any repository API call. */
+async function requireAdminCaller(ctx: ActionCtx): Promise<void> {
+  const user = await ctx.runQuery(api.users.currentUser, {});
+  if (!user) throw new Error("Not authenticated");
+  if (user.role !== "admin") throw new Error("Admin access required");
 }
 
 interface TreeEntry {
@@ -69,7 +101,8 @@ async function gh<T>(path: string, token: string, init?: RequestInit): Promise<T
 /** Verify the repo exists and the token can push to it. */
 export const verifyRepo = action({
   args: { owner: v.string(), repo: v.string() },
-  handler: async (_ctx, { owner, repo }) => {
+  handler: async (ctx, { owner, repo }): Promise<VerifyResult> => {
+    await requireAdminCaller(ctx);
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
       return {
@@ -101,19 +134,23 @@ export const verifyRepo = action({
  * THE PUSH — one commit containing the whole project source, built on top of
  * the repository's current head so existing files are preserved.
  */
-export const pushToGitHub = action({
-  args: {
-    owner: v.string(),
-    repo: v.string(),
-    branch: v.optional(v.string()),
-    pushId: v.string(),
-    // Optional commit subject; defaults to the initial-commit message used by
-    // the seed/bootstrap flow above. Lets audited re-pushes carry their own
-    // message without ever rewriting existing history.
-    message: v.optional(v.string()),
-  },
-  handler: async (ctx, { owner, repo, branch, pushId, message }) => {
-    const commitMessage = message?.trim() || COMMIT_MESSAGE;
+const pushArgs = {
+  owner: v.string(),
+  repo: v.string(),
+  branch: v.optional(v.string()),
+  pushId: v.string(),
+  // Optional commit subject; defaults to the initial-commit message used by
+  // the seed/bootstrap flow above. Lets audited re-pushes carry their own
+  // message without ever rewriting existing history.
+  message: v.optional(v.string()),
+};
+
+async function pushImpl(
+  ctx: ActionCtx,
+  args: { owner: string; repo: string; branch?: string; pushId: string; message?: string },
+): Promise<PushResult> {
+  const { owner, repo, branch, pushId, message } = args;
+  const commitMessage = message?.trim() || COMMIT_MESSAGE;
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
       return {
@@ -322,15 +359,30 @@ export const pushToGitHub = action({
       });
     }
 
-    return {
-      ok: true as const,
-      commitSha: commit.sha,
-      commitUrl: commit.html_url,
-      branch: refName,
-      filesCommitted: committed,
-      filesUnchanged: skippedUnchanged,
-      filesFailed: failed.length,
-      failures: failed.slice(0, 10),
-    };
+  return {
+    ok: true,
+    commitSha: commit.sha,
+    commitUrl: commit.html_url,
+    branch: refName,
+    filesCommitted: committed,
+    filesUnchanged: skippedUnchanged,
+    filesFailed: failed.length,
+    failures: failed.slice(0, 10),
+  };
+}
+
+/** Admin-only public wrapper (Settings → GitHub repository sync). */
+export const pushToGitHub = action({
+  args: pushArgs,
+  handler: async (ctx, args): Promise<PushResult> => {
+    await requireAdminCaller(ctx);
+    return await pushImpl(ctx, args);
   },
+});
+
+/** Trusted operator path for the audited terminal push workflow — internal,
+ *  so it can never be invoked from a browser. */
+export const internalPushToGitHub = internalAction({
+  args: pushArgs,
+  handler: async (ctx, args): Promise<PushResult> => await pushImpl(ctx, args),
 });

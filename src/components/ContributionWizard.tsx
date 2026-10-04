@@ -190,7 +190,7 @@ export function ContributionWizard({ onDone }: Props) {
 
   const prepare = useMutation(api.engine.prepareBatch);
   const pay = useMutation(api.engine.payBatch);
-  const pipeline = useMutation(api.engine.processPipeline);
+  const pipeline = useMutation(api.engine.resumePipeline);
 
   // Live-rail state: when the platform rail is "live", payBatch returns a
   // checkout handoff instead of settling instantly.

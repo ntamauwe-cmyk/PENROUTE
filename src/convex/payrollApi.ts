@@ -35,6 +35,7 @@
  */
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { readCapped } from "../lib/security";
 
 export const payrollScheduleIntake = httpAction(async (ctx, request) => {
   if (request.method !== "POST") {
@@ -59,12 +60,14 @@ export const payrollScheduleIntake = httpAction(async (ctx, request) => {
     records?: unknown;
   };
   try {
-    body = await request.json();
+    // Request-size limit: a hostile client cannot stream an unbounded body
+    // into the runtime (2 MB — comfortably above a 10k-row schedule).
+    body = JSON.parse(await readCapped(request.body, 2_000_000));
   } catch {
-    return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: false, error: "Invalid JSON body or payload exceeds 2 MB" }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
   }
 
   const year = Number(body.contributionYear);
@@ -88,6 +91,12 @@ export const payrollScheduleIntake = httpAction(async (ctx, request) => {
       status: 400,
       headers: { "content-type": "application/json" },
     });
+  }
+  if (records.length > 10_000) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "records exceeds the 10,000 row limit" }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
   }
 
   // Normalise + validate row shape before touching the database.

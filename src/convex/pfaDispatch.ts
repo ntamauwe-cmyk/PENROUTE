@@ -30,10 +30,11 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { action, internalAction } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { createHmac } from "node:crypto";
+import { isSafePublicHttpsUrl, readCapped } from "../lib/security";
 
 /** Statuses a PFA system may return (spec §13). */
 const PFA_STATUSES = new Set([
@@ -46,6 +47,9 @@ const PFA_STATUSES = new Set([
   "failed",
   "reconciled",
 ]);
+
+/** SSRF allow-list lives in src/lib/security.ts (isSafePublicHttpsUrl) so
+ *  the exact same logic is unit-tested by scripts/test-security.ts. */
 
 interface PfaEndpointConfig {
   endpoint?: string;
@@ -82,7 +86,7 @@ function authHeaders(cfg: PfaEndpointConfig, settlementRef?: string, body?: stri
 }
 
 /** Deliver every pending settlement instruction for a batch to live PFAs. */
-export const dispatchLiveSettlements = action({
+export const dispatchLiveSettlements = internalAction({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
     const settlements: Array<{ _id: Id<"settlements">; settlementRef: string; pfaId: Id<"pfas"> }> =
@@ -113,7 +117,7 @@ export const dispatchLiveSettlements = action({
         continue;
       }
       const cfg = (pfa.endpointConfig ?? {}) as PfaEndpointConfig;
-      if (!cfg.endpoint || !/^https:\/\/.+/.test(cfg.endpoint)) {
+      if (!cfg.endpoint || !isSafePublicHttpsUrl(cfg.endpoint)) {
         // Not configured — stays pending and visible, never silently posted.
         await ctx.runMutation(internal.pfaDispatchData.internalLog, {
           settlementId: s._id,
@@ -163,8 +167,10 @@ export const dispatchLiveSettlements = action({
           method: "POST",
           headers: authHeaders(cfg, s.settlementRef, body),
           body,
+          redirect: "error",
+          signal: AbortSignal.timeout(10_000),
         });
-        const text = await res.text();
+        const text = await readCapped(res.body, 65_536);
         let parsed: { status?: string; message?: string; acceptedCount?: number; rejectedCount?: number } = {};
         try {
           parsed = JSON.parse(text) as typeof parsed;
@@ -219,18 +225,24 @@ export const testPfaConnection = action({
     | { ok: false; reason: string }
     | { ok: boolean; httpStatus: number; response: string }
   > => {
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller || caller.role !== "admin") {
+      throw new Error("Admin access required");
+    }
     const pfa: { name: string; code: string; endpointConfig?: PfaEndpointConfig } | null =
       await ctx.runQuery(internal.pfaDispatchData.internalPfaById, { pfaId });
     if (!pfa) return { ok: false as const, reason: "PFA not found" };
     const cfg = (pfa.endpointConfig ?? {}) as PfaEndpointConfig;
-    if (!cfg.endpoint) return { ok: false as const, reason: "No endpoint configured for this PFA" };
+    if (!cfg.endpoint || !isSafePublicHttpsUrl(cfg.endpoint)) return { ok: false as const, reason: "PFA endpoint must be a valid public HTTPS URL on port 443" };
     try {
       const res = await fetch(cfg.endpoint, {
         method: "POST",
         headers: authHeaders(cfg),
         body: JSON.stringify({ ping: true, pfaCode: pfa.code, timestamp: Date.now() }),
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
       });
-      const text = (await res.text()).slice(0, 200);
+      const text = (await readCapped(res.body, 65_536)).slice(0, 200);
       return { ok: res.ok as boolean, httpStatus: res.status, response: text };
     } catch (e) {
       return { ok: false as const, reason: e instanceof Error ? e.message : "Connection failed" };

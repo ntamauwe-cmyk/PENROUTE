@@ -58,13 +58,22 @@ const schema = defineSchema(
       ownerUserId: v.optional(v.id("users")),
       // Payroll/HR API integration key (spec §4). Server-side only — stripped
       // from every query response before it reaches any client.
+      // `apiKey` is the LEGACY plaintext copy (pre-hardening rows only); new
+      // and rotated keys are stored ONLY as `apiKeyHash` (SHA-256 hex) and the
+      // plaintext copy is retired the first time a legacy key is used.
       apiKey: v.optional(v.string()),
+      apiKeyHash: v.optional(v.string()),
       apiKeyCreatedAt: v.optional(v.number()),
+      // Durable sliding-window throttle for the payroll intake API
+      // (attempts within the current 60s window + window start, ms epoch).
+      intakeCount: v.optional(v.number()),
+      intakeWindowStart: v.optional(v.number()),
       createdAt: v.number(),
     })
       .index("by_rc", ["rcNumber"])
       .index("by_owner", ["ownerUserId"])
-      .index("by_status", ["status"]),
+      .index("by_status", ["status"])
+      .index("by_apiKeyHash", ["apiKeyHash"]),
 
     // ------------------------------------------------------------------
     // PFAs — Pension Fund Administrators directory (master/reference data)

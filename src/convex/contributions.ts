@@ -1,6 +1,16 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { getCurrentEmployer } from "./employers";
+
+/** SECURITY: payroll API keys (and their hashes) are server-only and are
+ *  never included in any client-facing payload. */
+function safeEmployer(employer: Doc<"employers">) {
+  const safe = { ...employer };
+  delete safe.apiKey;
+  delete safe.apiKeyHash;
+  return safe;
+}
 
 /**
  * Rows for the current contribution cycle: the roster of employees and
@@ -43,7 +53,7 @@ export const getReadyEmployees = query({
     const recordByPin = new Map(records.map((r) => [r.pensionPin, r]));
 
     return {
-      employer,
+      employer: safeEmployer(employer),
       employees: employees
         .filter((e) => e.active)
         .sort((a, b) => a.fullName.localeCompare(b.fullName))
@@ -85,7 +95,7 @@ export const getContributionHistory = query({
       .collect();
 
     return {
-      employer,
+      employer: safeEmployer(employer),
       batches: batches.sort((a, b) => b.createdAt - a.createdAt),
     };
   },

@@ -1,18 +1,14 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getCurrentUser } from "./users";
+import { internal } from "./_generated/api";
 import { audit } from "./employers";
+import { randRef } from "../lib/security";
 
 // ============================================================================
 // PLATFORM ADMIN CONSOLE (spec §22, §23) — admins only
 // ============================================================================
 
-function randRef(prefix: string, len = 6): string {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `${prefix}-${s}`;
-}
 
 async function requireAdmin(ctx: Parameters<typeof getCurrentUser>[0]) {
   const user = await getCurrentUser(ctx);
@@ -216,7 +212,7 @@ export const adminSetEmployerStatus = mutation({
     const user = await requireAdmin(ctx);
     const employer = await ctx.db.get(employerId);
     if (!employer) throw new Error("Employer not found");
-    await ctx.db.patch(employerId, { status });
+    await ctx.db.patch(employerId, { status, ...(status === "active" ? { kycStatus: "verified" } : {}) });
     await audit(ctx, {
       actor: user.email ?? "admin",
       action: status === "suspended" ? "employer_suspended" : "employer_reactivated",
@@ -239,8 +235,8 @@ export const adminRetryPipeline = mutation({
     if (batch.status !== "processing") {
       throw new Error(`Only processing batches can be retried (status: ${batch.status})`);
     }
-    // Processed by the shared engine pipeline on the client's next call; here we
-    // simply mark the audit trail so the retry is attributable.
+    // Retry through the server-only pipeline; never expose the state machine to clients.
+    await ctx.scheduler.runAfter(0, internal.engine.processPipeline, { batchId });
     await audit(ctx, {
       actor: user.email ?? "admin",
       action: "admin_retry_pipeline",

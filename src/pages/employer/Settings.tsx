@@ -177,6 +177,9 @@ export default function Settings() {
  * platform Keys tab.
  */
 function GitHubSyncCard() {
+  // SECURITY: pushing to the operator's GitHub repository is admin-only.
+  // Non-admins never mount this card (and the gated status query is skipped).
+  const me = useQuery(api.users.currentUser, {});
   const [pushId] = useState(() => `push-${Date.now().toString(36)}`);
   const [owner, setOwner] = useState("ntamauwe-cmyk");
   const [repo, setRepo] = useState("penroute");
@@ -195,7 +198,12 @@ function GitHubSyncCard() {
   const verify = useAction(api.githubSync.verifyRepo);
   const stage = useMutation(api.githubSyncData.stagePush);
   const push = useAction(api.githubSync.pushToGitHub);
-  const status = useQuery(api.githubSyncData.githubPushStatus, { pushId });
+  const status = useQuery(
+    api.githubSyncData.githubPushStatus,
+    me?.role === "admin" ? { pushId } : "skip",
+  );
+
+  if (me?.role !== "admin") return null;
 
   const handleVerify = async () => {
     setVerifying(true);
