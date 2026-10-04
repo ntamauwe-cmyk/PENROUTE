@@ -30,8 +30,8 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { action, internalAction } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { createHmac } from "node:crypto";
 
@@ -82,7 +82,7 @@ function authHeaders(cfg: PfaEndpointConfig, settlementRef?: string, body?: stri
 }
 
 /** Deliver every pending settlement instruction for a batch to live PFAs. */
-export const dispatchLiveSettlements = action({
+export const dispatchLiveSettlements = internalAction({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
     const settlements: Array<{ _id: Id<"settlements">; settlementRef: string; pfaId: Id<"pfas"> }> =
@@ -219,6 +219,10 @@ export const testPfaConnection = action({
     | { ok: false; reason: string }
     | { ok: boolean; httpStatus: number; response: string }
   > => {
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller || caller.role !== "admin") {
+      throw new Error("Admin access required");
+    }
     const pfa: { name: string; code: string; endpointConfig?: PfaEndpointConfig } | null =
       await ctx.runQuery(internal.pfaDispatchData.internalPfaById, { pfaId });
     if (!pfa) return { ok: false as const, reason: "PFA not found" };
