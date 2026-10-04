@@ -206,7 +206,7 @@ export const logRailCall = action({
     success: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await ctx.runMutation(api.pension.internalAudit, {
+    await ctx.runMutation(internal.pension.internalAudit, {
       actor: "system",
       action: "integration_log",
       entityType: "integration",
