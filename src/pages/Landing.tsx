@@ -1,7 +1,10 @@
 import { motion } from "framer-motion";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Logo, RouteLines, PenrouteSymbol } from "@/components/Brand";
+import { computeProcessingFee } from "@/lib/pricing";
 import {
   ArrowRight,
   Building2,
@@ -40,6 +43,13 @@ export default function Landing() {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const enter = () => navigate(isAuthenticated ? "/dashboard" : "/auth");
+
+  // Live, centrally-configured pricing — the landing page never hard-codes a
+  // rate, so an admin price change is reflected here immediately.
+  const pricing = useQuery(api.pricing.getPublicPricing);
+  const quote100 = pricing ? computeProcessingFee(pricing.tiers, 100) : null;
+  const quote1000 = pricing ? computeProcessingFee(pricing.tiers, 1000) : null;
+  const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG")}`;
 
   return (
     <div className="min-h-screen bg-white">
@@ -364,10 +374,12 @@ export default function Landing() {
                 Per employee credit
               </p>
               <p className="mt-2 text-5xl font-bold text-white">
-                ₦9
+                {quote100 ? naira(quote100.feePerPostingKobo) : "—"}
               </p>
               <p className="mt-2 text-xs text-white/55">
-                100 employees → ₦900 · 1,000 employees → ₦9,000
+                {quote100 && quote1000
+                  ? `100 employees → ${naira(quote100.processingFeeKobo)} · 1,000 employees → ${naira(quote1000.processingFeeKobo)}`
+                  : "Live pricing — updated centrally the moment rates change"}
               </p>
               <Button
                 className="mt-5 w-full bg-[#00C896] font-semibold text-[#06251B] hover:bg-[#10d6a4]"

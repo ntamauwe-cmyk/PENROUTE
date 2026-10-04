@@ -209,9 +209,13 @@ export default function Billing() {
 
       {/* ---------------- Previous billing periods ---------------- */}
       <section>
-        <h2 className="mb-3 text-sm font-bold tracking-tight">
+        <h2 className="mb-1 text-sm font-bold tracking-tight">
           Previous billing periods
         </h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Rates are locked when each period is billed — later pricing changes apply to new
+          billings and never rewrite completed statements.
+        </p>
         <ClayTable
           headers={[
             "Billing period",

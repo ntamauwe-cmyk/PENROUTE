@@ -4,6 +4,7 @@ import { getCurrentUser } from "./users";
 import { internal } from "./_generated/api";
 import { audit } from "./employers";
 import { randRef } from "../lib/security";
+import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
 
 // ============================================================================
 // PLATFORM ADMIN CONSOLE (spec §22, §23) — admins only
@@ -37,6 +38,9 @@ export const getAdminOverview = query({
       .query("systemConfig")
       .withIndex("by_key", (q) => q.eq("key", "rail_mode"))
       .first();
+    // The rate quotes/billing actually use — served by the central pricing
+    // engine so the console can never display a stale fee.
+    const effectiveFeePerEmployeeKobo = (await quoteForPostings(ctx, 1)).feePerPostingKobo;
 
     const totalPension = batches.reduce((s, b) => s + b.totalPensionAmount, 0);
     const totalFees = batches.reduce((s, b) => s + b.platformFee, 0);
@@ -62,6 +66,7 @@ export const getAdminOverview = query({
       totalPension,
       totalFees,
       feePerEmployeeKobo: feeRow?.value ?? 900,
+      effectiveFeePerEmployeeKobo,
       railMode: (railRow?.value ?? 0) === 1 ? "live" : "sandbox",
       recentBatches: batches.sort((a, b) => b.createdAt - a.createdAt).slice(0, 10),
       exceptions,
@@ -153,13 +158,25 @@ export const adminUpdateFee = mutation({
         updatedBy: user.email ?? "admin",
       });
     }
+    // The Fee Engine must not be a display-only key: propagate the new rate
+    // to the live pricing tiers so quotes, billing, revenue reports and the
+    // public pricing page all show the price that was just saved.
+    const propagated = await applyFlatFeeToActiveTiers(
+      ctx,
+      perEmployeeFeeKobo,
+      user.email ?? "admin",
+    );
     await audit(ctx, {
       actor: user.email ?? "admin",
       action: "update_fee_config",
       entityType: "systemConfig",
-      details: `per-employee fee set to ${perEmployeeFeeKobo} kobo (previous: ${row?.value ?? "unset"})`,
+      details:
+        `per-employee fee set to ${perEmployeeFeeKobo} kobo (previous: ${row?.value ?? "unset"})` +
+        (propagated.updated > 0
+          ? ` — applied to ${propagated.updated} active pricing tier${propagated.updated === 1 ? "" : "s"}`
+          : " — active tiers already carry this rate"),
     });
-    return { ok: true };
+    return { ok: true, tiersUpdated: propagated.updated };
   },
 });
 

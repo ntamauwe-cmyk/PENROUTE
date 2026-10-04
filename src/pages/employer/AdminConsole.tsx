@@ -85,9 +85,11 @@ function AdminConsoleBody() {
   const [pfaOperatorPfaId, setPfaOperatorPfaId] = useState<string>("");
   const [grantBusy, setGrantBusy] = useState(false);
 
-  // null = no local edit yet — the input shows the server-configured fee.
+  // null = no local edit yet — the input shows the LIVE rate from the
+  // central pricing engine (what quotes and billing actually charge).
   const [fee, setFee] = useState<string | null>(null);
-  const feeValue = fee ?? String(overview?.feePerEmployeeKobo ?? "");
+  const feeValue =
+    fee ?? String(overview?.effectiveFeePerEmployeeKobo ?? overview?.feePerEmployeeKobo ?? "");
   const [rail, setRail] = useState<{ mode: string; configured: boolean } | null>(null);
   const [checkingRail, setCheckingRail] = useState(true); // status fetch starts on mount
   const [busy, setBusy] = useState(false);
@@ -170,7 +172,9 @@ function AdminConsoleBody() {
     setBusy(true);
     try {
       await updateFee({ perEmployeeFeeKobo: n });
-      toast.success(`Fee updated to ₦${(n / 100).toFixed(0)} per employee credit`);
+      toast.success(
+        `Fee updated to ₦${(n / 100).toFixed(0)} per employee — applied to every active pricing tier`,
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Update failed");
     } finally {
@@ -468,8 +472,10 @@ function AdminConsoleBody() {
           <section className="pen-card-lg p-6">
             <h2 className="font-bold tracking-tight">Fee management</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Per-employee contribution processing fee. Pension funds and platform revenue stay
-              separate in the ledger regardless of pricing.
+              Per-employee contribution processing fee. Saving applies this rate to every active
+              pricing tier, so quotes, Billing, revenue reports and the public pricing page all
+              show the new price immediately. Pension funds and platform revenue stay separate in
+              the ledger regardless of pricing.
             </p>
             <div className="mt-4 flex flex-wrap items-end gap-3">
               <div className="w-40">

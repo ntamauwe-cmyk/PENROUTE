@@ -133,6 +133,66 @@ function rangesOverlap(
 }
 
 // ============================================================================
+// FEE ENGINE INTEGRATION — the admin console's flat per-employee fee must
+// never drift from the tiered engine that actually quotes and bills.
+// ============================================================================
+
+/**
+ * Apply a flat per-posting fee to every currently-effective tier (spec §23
+ * Fee Engine). Each affected tier version is SUPERSEDED — the old row is
+ * closed with `effectiveTo` and a successor carrying the new rate is inserted
+ * — so pricing history and already-snapshotted billing records stay intact.
+ * Idempotent: tiers already carrying the rate are skipped, so an unchanged
+ * save performs no writes.
+ */
+export async function applyFlatFeeToActiveTiers(
+  ctx: MutationCtx,
+  feePerPostingKobo: number,
+  actor: string,
+): Promise<{ updated: number }> {
+  if (!Number.isFinite(feePerPostingKobo) || feePerPostingKobo < 0) {
+    throw new Error("Invalid fee amount");
+  }
+  await ensurePricingSeeded(ctx);
+  const now = Date.now();
+  const rows = await ctx.db.query("pricingTiers").collect();
+  const active = rows.filter(
+    (r) => r.active && r.effectiveFrom <= now && (r.effectiveTo === undefined || r.effectiveTo > now),
+  );
+  if (active.length === 0) return { updated: 0 };
+  const stale = active.filter((r) => r.feePerPostingKobo !== feePerPostingKobo);
+  if (stale.length === 0) return { updated: 0 };
+
+  let updated = 0;
+  for (const old of stale) {
+    await ctx.db.patch(old._id, { active: false, effectiveTo: now, updatedAt: now });
+    await ctx.db.insert("pricingTiers", {
+      code: old.code,
+      label: old.label,
+      minEmployees: old.minEmployees,
+      maxEmployees: old.maxEmployees,
+      feePerPostingKobo,
+      active: true,
+      effectiveFrom: now,
+      createdAt: now,
+      createdBy: actor,
+    });
+    updated++;
+  }
+  await audit(ctx, {
+    actor,
+    action: "pricing_tier_updated",
+    entityType: "pricingTier",
+    entityId: "fee-engine",
+    field: "feePerPostingKobo",
+    before: `₦${(stale[0].feePerPostingKobo / 100).toFixed(2)}`,
+    after: `₦${(feePerPostingKobo / 100).toFixed(2)}`,
+    details: `Fee Engine applied ₦${(feePerPostingKobo / 100).toFixed(2)} per posting to ${updated} active tier${updated === 1 ? "" : "s"} — quotes, billing and public pricing now reflect it`,
+  });
+  return { updated };
+}
+
+// ============================================================================
 // PUBLIC / EMPLOYER QUERIES
 // ============================================================================
 

@@ -3,7 +3,7 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getCurrentEmployer, getEmployerForUser } from "./employers";
-import { quoteForPostings } from "./pricing";
+import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
 import { applyPfaSeed, isSelectable } from "./pfaDirectory";
 
 // ============================================================================
@@ -574,14 +574,25 @@ export const updateFeeConfig = mutation({
         updatedBy: user.email ?? "admin",
       });
     }
+    // Keep the Fee Engine and the tiered pricing engine in lockstep — the
+    // saved rate must reach every quote/billing surface, not just this key.
+    const propagated = await applyFlatFeeToActiveTiers(
+      ctx,
+      perEmployeeFeeKobo,
+      user.email ?? "admin",
+    );
     await ctx.db.insert("auditLogs", {
       actor: user?.email ?? "admin",
       action: "update_fee_config",
       entityType: "systemConfig",
-      details: `per-employee fee set to ${perEmployeeFeeKobo} kobo (previous: ${row?.value ?? "unset"})`,
+      details:
+        `per-employee fee set to ${perEmployeeFeeKobo} kobo (previous: ${row?.value ?? "unset"})` +
+        (propagated.updated > 0
+          ? ` — applied to ${propagated.updated} active pricing tier${propagated.updated === 1 ? "" : "s"}`
+          : " — active tiers already carry this rate"),
       createdAt: now,
     });
-    return { ok: true };
+    return { ok: true, tiersUpdated: propagated.updated };
   },
 });
 
