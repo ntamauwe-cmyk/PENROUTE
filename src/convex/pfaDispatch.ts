@@ -47,6 +47,23 @@ const PFA_STATUSES = new Set([
   "reconciled",
 ]);
 
+/** Reject obvious SSRF targets before server-side outbound requests. */
+function isSafePublicHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
+    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host === "metadata.google.internal") return false;
+    if (host.includes(":")) return false;
+    const octets = host.split(".").map(Number);
+    if (octets.length === 4 && octets.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+      const [a, b] = octets;
+      if (a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return false;
+    } else if (!host.includes(".")) return false;
+    return true;
+  } catch { return false; }
+}
+
 interface PfaEndpointConfig {
   endpoint?: string;
   apiSecret?: string;
@@ -113,7 +130,7 @@ export const dispatchLiveSettlements = internalAction({
         continue;
       }
       const cfg = (pfa.endpointConfig ?? {}) as PfaEndpointConfig;
-      if (!cfg.endpoint || !/^https:\/\/.+/.test(cfg.endpoint)) {
+      if (!cfg.endpoint || !isSafePublicHttpsUrl(cfg.endpoint)) {
         // Not configured — stays pending and visible, never silently posted.
         await ctx.runMutation(internal.pfaDispatchData.internalLog, {
           settlementId: s._id,
@@ -163,6 +180,7 @@ export const dispatchLiveSettlements = internalAction({
           method: "POST",
           headers: authHeaders(cfg, s.settlementRef, body),
           body,
+          signal: AbortSignal.timeout(10_000),
         });
         const text = await res.text();
         let parsed: { status?: string; message?: string; acceptedCount?: number; rejectedCount?: number } = {};
@@ -227,12 +245,13 @@ export const testPfaConnection = action({
       await ctx.runQuery(internal.pfaDispatchData.internalPfaById, { pfaId });
     if (!pfa) return { ok: false as const, reason: "PFA not found" };
     const cfg = (pfa.endpointConfig ?? {}) as PfaEndpointConfig;
-    if (!cfg.endpoint) return { ok: false as const, reason: "No endpoint configured for this PFA" };
+    if (!cfg.endpoint || !isSafePublicHttpsUrl(cfg.endpoint)) return { ok: false as const, reason: "PFA endpoint must be a valid public HTTPS URL on port 443" };
     try {
       const res = await fetch(cfg.endpoint, {
         method: "POST",
         headers: authHeaders(cfg),
         body: JSON.stringify({ ping: true, pfaCode: pfa.code, timestamp: Date.now() }),
+        signal: AbortSignal.timeout(10_000),
       });
       const text = (await res.text()).slice(0, 200);
       return { ok: res.ok as boolean, httpStatus: res.status, response: text };
