@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getEmployerForUser } from "./employers";
@@ -912,7 +912,7 @@ export const finalizeLivePayment = mutation({
 // movement (spec §40).
 // ============================================================================
 
-export const processPipeline = mutation({
+export const processPipeline = internalMutation({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
     const batch = await ctx.db.get(batchId);
@@ -1072,7 +1072,7 @@ export const processPipeline = mutation({
       (s) => s.status === "pending" || s.status === "processing",
     );
     if (inFlight.length > 0) {
-      await ctx.scheduler.runAfter(0, api.pfaDispatch.dispatchLiveSettlements, { batchId });
+      await ctx.scheduler.runAfter(0, internal.pfaDispatch.dispatchLiveSettlements, { batchId });
       if (settledSettlements.length === 0) {
         await ctx.db.patch(batchId, { settlementStatus: "processing" });
       } else {
