@@ -230,12 +230,16 @@ export const logRailCall = action({
     success: v.boolean(),
   },
   handler: async (ctx, args) => {
+    const caller = await ctx.runQuery(api.users.currentUser, {});
+    if (!caller) throw new Error("Authentication required");
+    const batch = await ctx.runQuery(api.pension.getBatchDetail, { batchId: args.batchId });
+    if (!batch) throw new Error("Not authorized to log activity for this batch");
     await ctx.runMutation(internal.pension.internalAudit, {
-      actor: "system",
+      actor: caller.email ?? "unknown",
       action: "integration_log",
       entityType: "integration",
       batchId: args.batchId,
-      details: `rail | ${args.requestSummary} | ${args.responseSummary}`,
+      details: `rail | ${args.requestSummary.slice(0, 300)} | ${args.responseSummary.slice(0, 300)}`,
     });
   },
 });
