@@ -820,7 +820,7 @@ export const markLivePaymentFailedSystem = internalMutation({
   args: { paymentId: v.id("payments"), reason: v.string() },
   handler: async (ctx, { paymentId, reason }) => {
     const payment = await ctx.db.get(paymentId);
-    if (!payment || payment.status === "successful") return { ok: true as const };
+    if (!payment || payment.status === "successful" || payment.status === "failed") return { ok: true as const };
 
     await ctx.db.patch(paymentId, { status: "failed", failureReason: reason });
     await ctx.db.patch(payment.batchId, { paymentStatus: "failed" });
