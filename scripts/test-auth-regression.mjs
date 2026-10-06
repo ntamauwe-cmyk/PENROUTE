@@ -233,6 +233,15 @@ async function phaseIdentity() {
     return;
   }
   const existing = usersRes.value.filter((u) => !(u.name ?? "").startsWith("TEST-AUTH-"));
+  // Workspace resolution (getEmployerForUser) is OWNERSHIP-based: a linked
+  // employer only counts when this user owns it. Admin accounts may also own
+  // the workspace, so every "non-admin" probe below must exclude them.
+  const empRes = inline(
+    `(await ctx.db.query("employers").take(30)).map((e) => ({ _id: e._id, ownerUserId: e.ownerUserId ?? null }));`,
+  );
+  const employers = Array.isArray(empRes.value) ? empRes.value : [];
+  const ownsLinked = (u) =>
+    employers.some((e) => e._id === u.employerId && e.ownerUserId === u._id);
 
   // C1: signed-out callers get nothing.
   const anon = run("users:currentUser", {});
@@ -251,16 +260,25 @@ async function phaseIdentity() {
       me.value?._id === u._id,
       `got ${me.value?._id ?? "null"}`,
     );
-    const dash = run("pension:getEmployerDashboard", {}, subj(u._id, "regression"));
-    const okDash =
-      dash.value && dash.value !== null && (dash.value.employer ?? dash.value)?._id === u.employerId
-        ? true
-        : dash.value && typeof dash.value === "object";
-    check(
-      "employer session returns own dashboard (positive RBAC)",
-      okDash,
-      typeof dash.value === "object" ? `keys=${Object.keys(dash.value).slice(0, 6).join(",")}` : String(dash.value).slice(0, 80),
-    );
+    const workspaceUsers = empLinked.filter(ownsLinked);
+    if (workspaceUsers.length === 0) {
+      skip(
+        "employer session returns own dashboard (positive RBAC)",
+        "no linked dev user owns their employer (dangling links resolve to null by design)",
+      );
+    } else {
+      const owner = workspaceUsers[0];
+      const dash = run("pension:getEmployerDashboard", {}, subj(owner._id, "regression"));
+      const okDash =
+        dash.value != null && (dash.value.employer ?? dash.value)?._id === owner.employerId;
+      check(
+        "employer session returns own dashboard (positive RBAC)",
+        okDash,
+        dash.value == null
+          ? String(dash.value)
+          : `keys=${Object.keys(dash.value).slice(0, 6).join(",")}`,
+      );
+    }
     // PFA-role users must never receive the employer workspace.
     if (existing.some((u2) => u2.role === "pfa")) {
       const pfaUser = existing.find((u2) => u2.role === "pfa");
@@ -278,7 +296,10 @@ async function phaseIdentity() {
     skip("cross-tenant batch access denied", "no contribution batches or employer users in dev");
   } else {
     const b = batches[0];
-    const outsider = empLinked.find((u) => u.employerId !== b.employerId);
+    // Anyone who does not OWN the batch's employer must get nothing back —
+    // including users carrying a stale link to it (resolution is ownership-
+    // based, never link-only).
+    const outsider = empLinked.find((u) => !ownsLinked(u) || u.employerId !== b.employerId);
     if (outsider) {
       const got = run("pension:getBatchDetail", { batchId: b._id }, subj(outsider._id, "regression"));
       check(
@@ -289,7 +310,7 @@ async function phaseIdentity() {
     } else {
       skip("cross-tenant batch access denied", "all dev users belong to the batch's employer");
     }
-    const owner = empLinked.find((u) => u.employerId === b.employerId);
+    const owner = empLinked.find((u) => ownsLinked(u) && u.employerId === b.employerId);
     if (owner) {
       const got = run("pension:getBatchDetail", { batchId: b._id }, subj(owner._id, "regression"));
       check(
@@ -297,6 +318,8 @@ async function phaseIdentity() {
         got.value !== null && got.value !== undefined,
         got.value === null ? "null" : "data",
       );
+    } else {
+      skip("owner tenant's batch → returned (positive path)", "no owner-linked dev user for the batch's employer");
     }
   }
 
@@ -315,7 +338,11 @@ async function phaseIdentity() {
       adminOk.status === 0 && !DENIED_RE.test(adminOk.text),
       adminOk.status === 0 ? "data" : adminOk.text.trim().slice(0, 120),
     );
-    for (const u of empLinked.slice(0, 2)) {
+    const nonAdminLinked = empLinked.filter((u) => u.role !== "admin");
+    if (nonAdminLinked.length === 0) {
+      skip("non-admin denied admin gate", "every employer-linked dev user is an admin");
+    }
+    for (const u of nonAdminLinked.slice(0, 2)) {
       const denied = run("admin:getAdminOverview", {}, subj(u._id, "regression"));
       check(
         `non-admin (${u.role ?? "no-role"}) denied admin gate`,
