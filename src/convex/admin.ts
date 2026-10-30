@@ -1,10 +1,11 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { getCurrentUser } from "./users";
 import { internal } from "./_generated/api";
 import { audit } from "./employers";
 import { randRef } from "../lib/security";
 import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
+import { sandboxModeEnabled } from "./environment";
 
 // ============================================================================
 // PLATFORM ADMIN CONSOLE (spec §22, §23) — admins only
@@ -67,7 +68,9 @@ export const getAdminOverview = query({
       totalFees,
       feePerEmployeeKobo: feeRow?.value ?? 900,
       effectiveFeePerEmployeeKobo,
-      railMode: (railRow?.value ?? 0) === 1 ? "live" : "sandbox",
+      railMode: (railRow?.value ?? 0) === 1 ? "live" : sandboxModeEnabled() ? "sandbox" : "not_configured",
+      sandboxDeployment: sandboxModeEnabled(),
+      paystackKeyConfigured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_SECRET_KEY.length > 20),
       recentBatches: batches.sort((a, b) => b.createdAt - a.createdAt).slice(0, 10),
       exceptions,
       ledgerCount: ledger.length,
@@ -104,6 +107,11 @@ export const listAllEmployers = query({
           status: e.status,
           kycStatus: e.kycStatus,
           contactEmail: e.contactEmail,
+          // KYB details the reviewer needs before approving an employer.
+          tin: e.tin,
+          registeredAddress: e.registeredAddress,
+          contactPhone: e.contactPhone,
+          representativeName: e.representativeName,
           employees: employees.filter((x) => x.employerId === e._id).length,
           batches: eb.length,
           processedKobo: eb
@@ -189,6 +197,15 @@ export const adminSetRailMode = mutation({
   args: { mode: v.union(v.literal("sandbox"), v.literal("live")) },
   handler: async (ctx, { mode }) => {
     const user = await requireAdmin(ctx);
+    if (mode === "sandbox" && !sandboxModeEnabled()) {
+      throw new Error("The sandbox payment rail is disabled on production deployments");
+    }
+    if (mode === "live") {
+      const key = process.env.PAYSTACK_SECRET_KEY ?? "";
+      if (!/^sk_(live|test)_/.test(key) || key.length <= 20) {
+        throw new Error("Set PAYSTACK_SECRET_KEY in the Convex deployment environment before enabling the live rail");
+      }
+    }
     const row = await ctx.db
       .query("systemConfig")
       .withIndex("by_key", (q) => q.eq("key", "rail_mode"))
@@ -232,7 +249,12 @@ export const adminSetEmployerStatus = mutation({
     await ctx.db.patch(employerId, { status, ...(status === "active" ? { kycStatus: "verified" } : {}) });
     await audit(ctx, {
       actor: user.email ?? "admin",
-      action: status === "suspended" ? "employer_suspended" : "employer_reactivated",
+      action:
+        status === "suspended"
+          ? "employer_suspended"
+          : employer.status === "pending" || employer.status === "under_review"
+            ? "employer_approved"
+            : "employer_reactivated",
       entityType: "employer",
       entityId: employerId,
       employerId,
@@ -370,5 +392,34 @@ export const adminListPfaIntegrations = query({
           endpoint: cfg?.endpoint ?? null,
         };
       });
+  },
+});
+
+/**
+ * OPERATOR-ONLY admin grant (not callable from any browser): run from a
+ * trusted terminal with deploy access —
+ *   npx convex run admin:grantPlatformAdmin '{"email":"ops@penroute.net"}'
+ * The account must already exist (the person has signed in once).
+ */
+export const grantPlatformAdmin = internalMutation({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const norm = email.trim().toLowerCase();
+    const users = await ctx.db.query("users").withIndex("email", (q) => q.eq("email", norm)).take(10);
+    const user = users.find((u) => !u.isAnonymous);
+    if (!user) throw new Error(`No signed-up account for ${norm} — ask them to sign in once first`);
+    if (user.role === "admin") return { ok: true, unchanged: true };
+    await ctx.db.patch(user._id, { role: "admin", pfaId: undefined });
+    await audit(ctx, {
+      actor: "operator-cli",
+      action: "platform_admin_granted",
+      entityType: "user",
+      entityId: user._id,
+      field: "role",
+      before: user.role ?? "(none)",
+      after: "admin",
+      details: `${norm} granted platform admin from the operator CLI`,
+    });
+    return { ok: true };
   },
 });

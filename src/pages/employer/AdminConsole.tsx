@@ -17,6 +17,7 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { ClayTable, LoadingBlock, PageHeader, StatTile, StatusPill } from "@/components/pension-ui";
 import { fmtDateTime, fmtNaira } from "@/lib/pension";
 import type { Id } from "@/convex/_generated/dataModel";
+import { SettlementConfirmations } from "@/components/SettlementConfirmations";
 import {
   CheckCircle2,
   Database,
@@ -213,7 +214,10 @@ function AdminConsoleBody() {
     }
   };
 
-  const effectiveMode = rail?.mode ?? overview?.railMode ?? "sandbox";
+  // The PLATFORM rail comes from the database (what payBatch actually uses).
+  // railStatus only describes the configured Paystack key (test vs live).
+  const effectiveMode = overview?.railMode ?? "not_configured";
+  const sandboxDeployment = overview?.sandboxDeployment ?? false;
 
   return (
     <DashboardShell>
@@ -271,8 +275,10 @@ function AdminConsoleBody() {
                   <KeyRound className="size-5 text-primary" /> Payment rail
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Switch collection between the clearly-labelled sandbox rail and the live Paystack
-                  rail — no code changes. The ledger only records after the provider verifies payment.
+                  {sandboxDeployment
+                    ? "Sandbox deployment: switch between the clearly-labelled simulated rail and Paystack."
+                    : "Production deployment: contributions can only be paid through Paystack. The simulated sandbox rail is disabled."}{" "}
+                  The ledger only records after the provider verifies payment.
                 </p>
               </div>
               <Badge
@@ -282,7 +288,11 @@ function AdminConsoleBody() {
                     : "bg-[#FBF3E0] text-[#7A5A10]"
                 }
               >
-                {effectiveMode === "live" ? "LIVE (Paystack)" : "SANDBOX (test rail)"}
+                {effectiveMode === "live"
+                  ? `LIVE (Paystack${rail?.mode === "sandbox" ? " test key" : ""})`
+                  : effectiveMode === "sandbox"
+                    ? "SANDBOX (test rail)"
+                    : "NOT CONFIGURED — payments disabled"}
               </Badge>
             </div>
 
@@ -304,7 +314,8 @@ function AdminConsoleBody() {
                   {rail.configured ? (
                     <>
                       <CheckCircle2 className="size-4 text-[#007A4D]" />
-                      Paystack key detected — ready for live mode
+                      Paystack {rail.mode === "live" ? "LIVE" : "TEST"} key detected
+                      {rail.mode !== "live" && " — real money is not collected with a test key"}
                     </>
                   ) : (
                     <>
@@ -317,13 +328,15 @@ function AdminConsoleBody() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                variant={effectiveMode === "sandbox" ? "default" : "outline"}
-                onClick={() => flipRail("sandbox")}
-                disabled={busy || effectiveMode === "sandbox"}
-              >
-                Use sandbox rail
-              </Button>
+              {sandboxDeployment && (
+                <Button
+                  variant={effectiveMode === "sandbox" ? "default" : "outline"}
+                  onClick={() => flipRail("sandbox")}
+                  disabled={busy || effectiveMode === "sandbox"}
+                >
+                  Use sandbox rail
+                </Button>
+              )}
               <Button
                 variant={effectiveMode === "live" ? "default" : "outline"}
                 onClick={() => flipRail("live")}
@@ -333,6 +346,9 @@ function AdminConsoleBody() {
               </Button>
             </div>
           </section>
+
+          {/* Manual settlement confirmation (PFAs without live API integration) */}
+          <SettlementConfirmations scope="admin" />
 
           {/* PLUG-AND-PLAY: PFA live integrations */}
           <section className="pen-card-lg p-6">
@@ -547,6 +563,10 @@ function AdminConsoleBody() {
                     <td className="px-3 py-2.5">
                       <p className="font-medium">{e.name}</p>
                       <p className="text-xs text-muted-foreground">{e.contactEmail}</p>
+                      <p className="text-xs text-muted-foreground">
+                        TIN {e.tin} · {e.representativeName} · {e.contactPhone}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{e.registeredAddress}</p>
                     </td>
                     <td className="px-3 py-2.5 font-mono text-xs">{e.rcNumber}</td>
                     <td className="px-3 py-2.5 tabular-nums">{e.employees}</td>
@@ -577,13 +597,19 @@ function AdminConsoleBody() {
                               employerId: e._id,
                               status: e.status === "active" ? "suspended" : "active",
                             });
-                            toast.success(`${e.name} ${e.status === "active" ? "suspended" : "reactivated"}`);
+                            toast.success(
+                              `${e.name} ${e.status === "active" ? "suspended" : e.status === "pending" || e.status === "under_review" ? "approved" : "reactivated"}`,
+                            );
                           } catch (err) {
                             toast.error(err instanceof Error ? err.message : "Update failed");
                           }
                         }}
                       >
-                        {e.status === "active" ? "Suspend" : "Reactivate"}
+                        {e.status === "active"
+                          ? "Suspend"
+                          : e.status === "pending" || e.status === "under_review"
+                            ? "Approve"
+                            : "Reactivate"}
                       </Button>
                     </td>
                   </tr>

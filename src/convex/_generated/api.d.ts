@@ -16,6 +16,7 @@ import type * as billing from "../billing.js";
 import type * as contributions from "../contributions.js";
 import type * as employers from "../employers.js";
 import type * as engine from "../engine.js";
+import type * as environment from "../environment.js";
 import type * as githubPr from "../githubPr.js";
 import type * as githubSync from "../githubSync.js";
 import type * as githubSyncData from "../githubSyncData.js";
@@ -30,6 +31,7 @@ import type * as pfaDispatchData from "../pfaDispatchData.js";
 import type * as pfaPortal from "../pfaPortal.js";
 import type * as pricing from "../pricing.js";
 import type * as securitySelftest from "../securitySelftest.js";
+import type * as settlementOps from "../settlementOps.js";
 import type * as users from "../users.js";
 
 import type {
@@ -47,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   contributions: typeof contributions;
   employers: typeof employers;
   engine: typeof engine;
+  environment: typeof environment;
   githubPr: typeof githubPr;
   githubSync: typeof githubSync;
   githubSyncData: typeof githubSyncData;
@@ -61,6 +64,7 @@ declare const fullApi: ApiFromModules<{
   pfaPortal: typeof pfaPortal;
   pricing: typeof pricing;
   securitySelftest: typeof securitySelftest;
+  settlementOps: typeof settlementOps;
   users: typeof users;
 }>;
 

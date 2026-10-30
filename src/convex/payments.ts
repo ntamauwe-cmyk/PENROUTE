@@ -215,6 +215,16 @@ export const confirmLivePayment = action({
       paymentRef: payment.paymentRef,
     });
     if (!verified.ok) throw new Error(verified.reason ?? "Paystack verification failed");
+    if (verified.outcome === "failed") {
+      // Terminal decline reported by Paystack itself — recorded server-side.
+      // ("abandoned"/"ongoing"/"pending" mean the checkout is unfinished: the
+      // payment stays open so the employer can still complete it.)
+      await ctx.runMutation(internal.engine.markLivePaymentFailedSystem, {
+        paymentId: payment._id,
+        reason: "Paystack reports the payment failed (verified)",
+      });
+      return { ok: true as const, outcome: verified.outcome };
+    }
     if (verified.outcome !== "success") {
       return { ok: true as const, outcome: verified.outcome };
     }

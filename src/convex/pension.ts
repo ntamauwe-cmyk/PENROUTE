@@ -5,6 +5,10 @@ import { getCurrentUser } from "./users";
 import { audit, getCurrentEmployer, getEmployerForUser } from "./employers";
 import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
 import { applyPfaSeed, isSelectable } from "./pfaDirectory";
+import { bootstrapAdminEmails, requireSandboxMode, sandboxModeEnabled } from "./environment";
+
+/** RC number of the seeded demo employer — the ONLY workspace demo-claiming may touch. */
+const DEMO_EMPLOYER_RC = "RC-1938476";
 
 // ============================================================================
 // PFA DIRECTORY — licensed Pension Fund Administrators in Nigeria
@@ -397,11 +401,14 @@ export const claimDemoEmployer = mutation({
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
     if (user.role !== "admin") throw new Error("Demo employer claiming is restricted to platform admins");
+    requireSandboxMode("The demo workspace");
+    // Only ever the seeded demo employer — never "the first active employer",
+    // which on a live deployment is a real customer's workspace.
     const active = await ctx.db
       .query("employers")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .withIndex("by_rc", (q) => q.eq("rcNumber", DEMO_EMPLOYER_RC))
       .first();
-    if (!active) throw new Error("No employer seeded yet");
+    if (!active) throw new Error("No demo employer seeded yet");
     // Ownership must MOVE with the claim: workspace resolution
     // (getEmployerForUser) only grants access to the employer's owner, so
     // linking the claimer without transferring ownership left them with a
@@ -432,7 +439,12 @@ export const bootstrapAdminStatus = query({
     if (user.role === "admin") return { available: false, eligible: false };
     const users = await ctx.db.query("users").take(10_000);
     const available = !users.some((u) => u.role === "admin");
-    return { available, eligible: !user.isAnonymous && Boolean(user.email) };
+    const allowed = bootstrapAdminEmails();
+    return {
+      available,
+      eligible:
+        !user.isAnonymous && Boolean(user.email) && allowed.has((user.email ?? "").trim().toLowerCase()),
+    };
   },
 });
 
@@ -445,6 +457,13 @@ export const claimPlatformAdmin = mutation({
     if (user.isAnonymous) throw new Error("Sign in with your email to claim platform admin");
     if (!user.email) throw new Error("A signed-in email account is required to claim platform admin");
     if (user.role === "admin") return { ok: true, unchanged: true };
+    // Only operator emails named in PENROUTE_BOOTSTRAP_ADMIN_EMAILS may claim.
+    // Without it, the first stranger to sign up on a fresh deployment would
+    // become super-admin. (Operators can also grant admin from the CLI:
+    // `npx convex run admin:grantPlatformAdmin '{"email":"..."}'`.)
+    if (!bootstrapAdminEmails().has(user.email.trim().toLowerCase())) {
+      throw new Error("This account is not authorised to claim platform admin");
+    }
     const users = await ctx.db.query("users").take(10_000);
     if (users.some((u) => u.role === "admin")) {
       throw new Error("Platform admin is already configured");
@@ -481,10 +500,17 @@ export const registerEmployer = mutation({
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
+    if (user.isAnonymous && !sandboxModeEnabled()) {
+      throw new Error("Sign in with your work email to register a company");
+    }
+    if (user.role === "pfa") throw new Error("PFA portal accounts cannot register an employer workspace");
     if (!args.name.trim()) throw new Error("Company name is required");
     if (!args.rcNumber.trim()) throw new Error("RC number is required");
     if (!args.tin.trim()) throw new Error("TIN is required");
-    if (!args.contactEmail.includes("@")) throw new Error("A valid contact email is required");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(args.contactEmail.trim())) throw new Error("A valid contact email is required");
+    for (const [field, value] of Object.entries(args)) {
+      if (value.length > 300) throw new Error(`${field} is too long`);
+    }
 
     const dupRc = await ctx.db
       .query("employers")
@@ -530,6 +556,7 @@ export const seedDemoData = mutation({
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
     if (user.role !== "admin") throw new Error("Demo data seeding is restricted to platform admins");
+    requireSandboxMode("Demo data seeding");
     const existing = await ctx.db.query("employers").first();
     if (existing) return { seeded: false, reason: "already_seeded" };
 
@@ -839,5 +866,20 @@ export const internalAudit = internalMutation({
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("auditLogs", { ...args, createdAt: Date.now() });
+  },
+});
+
+/** Public deployment flags for the UI (no secrets): whether this is a
+ *  sandbox/demo deployment and whether a payment rail is available. */
+export const deploymentInfo = query({
+  args: {},
+  handler: async (ctx) => {
+    const rail = await ctx.db
+      .query("systemConfig")
+      .withIndex("by_key", (q) => q.eq("key", "rail_mode"))
+      .first();
+    const sandboxMode = sandboxModeEnabled();
+    const liveRail = (rail?.value ?? 0) === 1;
+    return { sandboxMode, liveRail, paymentsAvailable: liveRail || sandboxMode };
   },
 });

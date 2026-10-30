@@ -12,17 +12,10 @@
  * ============================================================================
  */
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
-import type { FunctionReference } from "convex/server";
+import { internal } from "./_generated/api";
 import { readCapped } from "../lib/security";
 
-// Generated types have caught up — resolve the internal references directly.
-// (Kept behind a typed accessor so a future rename fails loudly, not silently.)
-const engineApi = api.engine as unknown as {
-  getPaymentByRef: FunctionReference<"query">;
-  finalizeLivePaymentSystem: FunctionReference<"mutation">;
-  markLivePaymentFailedSystem: FunctionReference<"mutation">;
-};
+const engineApi = internal.engine;
 
 // Durable, database-backed idempotency: finalizeLivePaymentSystem and
 // markLivePaymentFailedSystem are guarded by the stored payment status, so

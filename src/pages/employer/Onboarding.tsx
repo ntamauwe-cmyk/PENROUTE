@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/pension-ui";
 import { Building2, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
 
 /**
  * Self-service employer onboarding (spec §4) — plug-and-play multi-tenancy.
@@ -20,6 +21,8 @@ export default function Onboarding() {
   const seed = useMutation(api.pension.seedDemoData);
   const claim = useMutation(api.pension.claimDemoEmployer);
   const dash = useQuery(api.pension.getEmployerDashboard);
+  const deployment = useQuery(api.pension.deploymentInfo);
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -40,8 +43,8 @@ export default function Onboarding() {
     setSaving(true);
     try {
       await register(form);
-      toast.success("Workspace created", {
-        description: `${form.name} is ready — add employees, then make your first contribution.`,
+      toast.success("Registration submitted", {
+        description: `${form.name} is under review. Add your employees now — payments open once Penroute approves your account.`,
       });
       navigate("/dashboard");
     } catch (err) {
@@ -128,7 +131,7 @@ export default function Onboarding() {
           <Button type="submit" className="font-semibold" disabled={saving}>
             {saving ? "Creating workspace…" : "Create workspace"}
           </Button>
-          {!hasWorkspace && (
+          {!hasWorkspace && deployment?.sandboxMode && user?.role === "admin" && (
             <Button type="button" variant="outline" onClick={loadDemo} disabled={saving}>
               Or load the demo workspace
             </Button>

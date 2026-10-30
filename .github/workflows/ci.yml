@@ -30,3 +30,11 @@ jobs:
         run: bun scripts/test-security.ts
       - name: Pricing engine tests
         run: bun scripts/test-pricing.ts
+      # Executes the real Convex functions (queries, mutations, actions,
+      # HTTP webhooks, scheduled pipeline) in-memory via convex-test.
+      - name: Backend integration tests
+        run: bun run test:backend
+      - name: Production build
+        run: bun run build
+        env:
+          VITE_CONVEX_URL: https://ci-placeholder.convex.cloud

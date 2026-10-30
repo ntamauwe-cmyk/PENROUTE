@@ -229,8 +229,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 )}
 
                 <p className="mt-5 text-center text-xs leading-relaxed text-[#5A6B74]">
-                  New to Penroute? Just sign in with your work email — your workspace is created
-                  on first sign-in.
+                  New to Penroute? Sign in with your work email, then register your company —
+                  we review every employer before contribution payments open.
                 </p>
               </>
             ) : (

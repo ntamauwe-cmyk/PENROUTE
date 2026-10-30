@@ -54,6 +54,7 @@ export function ContributionWizard({ onDone }: Props) {
     | {
         batch: {
           status: string;
+          paymentStatus: string;
           settlementStatus: string;
           pfaStatus: string;
           reconciliationStatus: string;
@@ -256,15 +257,13 @@ export function ContributionWizard({ onDone }: Props) {
           } catch {
             /* pipeline can also be resumed from the dashboard */
           }
-          if (dispatched) {
-            toast.info("Payment verified — contributions are being delivered to the PFAs", {
-              description: "This page updates live as each PFA acknowledges and posts.",
-            });
-          } else {
-            toast.success("Pension payment completed", {
-              description: `${monthName(month)} ${year} · ${totalRecords} employees · reconciled & posted`,
-            });
-          }
+          // Payment is verified; settlement, PFA posting and reconciliation are
+          // separate stages that confirm on their own — never claim them here.
+          toast.success("Payment verified by Paystack", {
+            description: dispatched
+              ? "Contributions are being delivered to the PFAs — this page updates live."
+              : `${monthName(month)} ${year} · ${totalRecords} employees · processing`,
+          });
           setStep("done");
           setFinishedBatchId(checkout.batchId);
           onDone(checkout.batchId);
@@ -295,7 +294,7 @@ export function ContributionWizard({ onDone }: Props) {
         {b && (
           <div className="mx-auto mt-4 flex max-w-md flex-wrap justify-center gap-2">
             <Badge variant="outline" className="font-medium">
-              Payment: {statusLabel("successful")}
+              Payment: {statusLabel(b.paymentStatus)}
             </Badge>
             <Badge variant="outline" className="font-medium">
               Settlement: {statusLabel(b.settlementStatus)}

@@ -16,15 +16,18 @@
 | `CONVEX_DEPLOYMENT` | local `.env` | yes (local/dev) | Target deployment for `convex dev` |
 | `GITHUB_TOKEN` | Convex deployment env (Keys tab) | for GitHub sync | Classic PAT with **`repo` + `workflow`** scopes; used only by internal/admin-gated sync & PR actions |
 | `PAYSTACK_SECRET_KEY` | Convex deployment env (Keys tab) | for live payments | `sk_test_…` sandbox / `sk_live_…` production; webhook HMAC verification |
-| `EMAIL_OTP_API_KEY` | Convex deployment env (Keys tab) | optional | Override for the OTP email relay key (built-in platform key is the fallback) |
-| `VLY_CONVEX_AUTH_ISSUER`, `VLY_APP_NAME`, `VLY_APP_ID`, `VLY_INTEGRATION_KEY` | Convex deployment env | optional | Freebuff federated sign-in/branding (built-in defaults) |
+| `EMAIL_OTP_API_KEY` | Convex deployment env (Keys tab) | **yes** (sign-in) | OTP email relay key. No longer hard-coded: without it, sign-in codes cannot be sent. The previously committed key is public in git history — rotate it. |
+| `PENROUTE_SANDBOX_MODE` | Convex deployment env | dev/preview only | `enabled` marks a NON-production deployment: allows the simulated sandbox payment rail, sandbox PFA acknowledgements, demo seeding and guest workspaces. **Never set on production.** Unset = production behaviour (fail closed). |
+| `PENROUTE_BOOTSTRAP_ADMIN_EMAILS` | Convex deployment env | first launch | Comma-separated operator emails allowed to claim the one-time platform-admin bootstrap. Unset = nobody can self-claim admin (use `npx convex run admin:grantPlatformAdmin '{"email":"…"}'`). |
+| `VLY_CONVEX_AUTH_ISSUER` | Convex deployment env | Freebuff previews only | When set, tokens from this issuer are trusted for sign-in. Leave UNSET on production — no third-party issuer is trusted by default. |
+| `VLY_APP_NAME`, `VLY_APP_ID`, `VLY_INTEGRATION_KEY` | Convex deployment env | optional | Freebuff branding/integration (not required in production) |
 | `VLY_MONITORING_URL` | Convex deployment env | optional | Telemetry sink; no-op when unset |
 
 ## Fail-safe behaviour when configuration is missing (verified in source)
 
 | Feature missing key | Behaviour |
 | --- | --- |
-| `PAYSTACK_SECRET_KEY` | Webhook returns **401** for every delivery (fails closed); payment initialization falls back to **sandbox** mode — never a live charge |
+| `PAYSTACK_SECRET_KEY` | Webhook returns **401** for every delivery (fails closed); the admin console refuses to enable the live rail; on production no payment can be made (the sandbox rail requires `PENROUTE_SANDBOX_MODE=enabled`) |
 | `GITHUB_TOKEN` | Sync/PR actions throw a descriptive configuration error; no repository call is attempted |
 | `EMAIL_OTP_API_KEY` | Built-in platform relay key keeps sign-in working (rotatable without a code change) |
 | `CONVEX_SITE_URL` | Auth OIDC routes cannot register; sign-in cannot confirm (deployment misconfiguration surfaces immediately) |

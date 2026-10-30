@@ -16,26 +16,35 @@ export const emailOtp = Email({
     return generateRandomString(random, alphabet, 6);
   },
   async sendVerificationRequest({ identifier: email, token }) {
-    // Platform-provided relay key. Overridable via the Keys tab
-    // (EMAIL_OTP_API_KEY) so it can be rotated without a code change;
-    // the built-in value keeps OTP sign-in working when unset.
-    const apiKey = process.env.EMAIL_OTP_API_KEY || "fb_email_2crN1hqIArZP2bEfvjp5Qik4";
+    // The relay key is a SECRET: it must come from the deployment environment
+    // (EMAIL_OTP_API_KEY). It is never hard-coded — a key committed to a
+    // public repository lets anyone send sign-in emails in Penroute's name.
+    const apiKey = process.env.EMAIL_OTP_API_KEY;
+    if (!apiKey) {
+      console.error("EMAIL_OTP_API_KEY is not configured — cannot send sign-in codes");
+      throw new Error("Sign-in emails are temporarily unavailable. Please try again later.");
+    }
     try {
       await axios.post(
         "https://auth.freebuff.app/send_otp",
         {
           to: email,
           otp: token,
-          appName: process.env.VLY_APP_NAME || "a freebuff.com application",
+          appName: process.env.VLY_APP_NAME || "Penroute",
         },
         {
           headers: {
             "x-api-key": apiKey,
           },
+          timeout: 15_000,
         },
       );
     } catch (error) {
-      throw new Error(JSON.stringify(error));
+      // Never serialise the axios error: it contains the request headers,
+      // i.e. the relay API key, and would leak it into logs/clients.
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      console.error(`OTP relay request failed${status ? ` (HTTP ${status})` : ""}`);
+      throw new Error("We couldn't send your sign-in code. Please try again shortly.");
     }
   },
 });

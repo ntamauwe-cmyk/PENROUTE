@@ -21,9 +21,11 @@ import {
   Landmark,
   Plus,
   RefreshCw,
+  TriangleAlert,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/use-auth";
 import {
   CYCLE_STAGES,
@@ -52,6 +54,8 @@ export default function Overview() {
   const { user } = useAuth();
   const bootstrap = useQuery(api.pension.bootstrapAdminStatus);
   const claimAdmin = useMutation(api.pension.claimPlatformAdmin);
+  const deployment = useQuery(api.pension.deploymentInfo);
+  const navigate = useNavigate();
   const [seeding, setSeeding] = useState(false);
 
   const latest = batches[0] ?? null;
@@ -79,15 +83,13 @@ export default function Overview() {
   // One-time bootstrap: demo loading is admin-only, but a fresh deployment
   // has no admin yet — the first signed-in email account can claim the role
   // and then load the demo in one go. Locked forever once an admin exists.
-  const bootstrapAdminThenSeed = async () => {
+  const bootstrapAdmin = async () => {
     try {
       await claimAdmin({});
       toast.success("Platform admin assigned to this account");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not claim platform admin");
-      return;
     }
-    await ensureSeed();
   };
 
   const canBootstrap = Boolean(
@@ -107,6 +109,8 @@ export default function Overview() {
   }
 
   if (needsSeed) {
+    const isAdmin = user?.role === "admin";
+    const canLoadDemo = Boolean(deployment?.sandboxMode) && isAdmin;
     return (
       <main className="flex min-h-screen items-center justify-center px-4">
         <div className="pen-card-lg max-w-md p-8 text-center">
@@ -117,22 +121,41 @@ export default function Overview() {
             Welcome to Penroute
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-[#5A6B74]">
-            Load the demo employer (Rae Technologies Limited) with 24 employees across 4 PFAs to
-            explore the platform.
+            {isAdmin
+              ? "You're signed in as a platform administrator. Review employer applications, payment rails and PFA settlements in the admin console."
+              : "Register your company to open your employer workspace. Your details are reviewed by Penroute before contributions can be paid."}
           </p>
-          <Button
-            className="mt-6 w-full bg-[#007A4D] font-semibold hover:bg-[#006A43]"
-            onClick={ensureSeed}
-            disabled={seeding}
-          >
-            {seeding ? <RefreshCw className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            Load demo workspace
-          </Button>
+          {isAdmin ? (
+            <Button
+              className="mt-6 w-full bg-[#007A4D] font-semibold hover:bg-[#006A43]"
+              onClick={() => navigate("/admin")}
+            >
+              Open admin console
+            </Button>
+          ) : (
+            <Button
+              className="mt-6 w-full bg-[#007A4D] font-semibold hover:bg-[#006A43]"
+              onClick={() => navigate("/onboarding")}
+            >
+              <Plus className="size-4" /> Register your company
+            </Button>
+          )}
+          {canLoadDemo && (
+            <Button
+              variant="outline"
+              className="mt-3 w-full font-medium"
+              onClick={ensureSeed}
+              disabled={seeding}
+            >
+              {seeding ? <RefreshCw className="size-4 animate-spin" /> : null}
+              Load demo workspace (sandbox)
+            </Button>
+          )}
           {canBootstrap && (
             <Button
               variant="outline"
               className="mt-3 w-full font-medium"
-              onClick={bootstrapAdminThenSeed}
+              onClick={bootstrapAdmin}
               disabled={seeding}
             >
               Make this account the platform admin (one-time setup)
@@ -142,6 +165,14 @@ export default function Overview() {
       </main>
     );
   }
+
+  const employerApproved = employer?.status === "active" && employer?.kycStatus === "verified";
+  const canPay = employerApproved && deployment?.paymentsAvailable !== false;
+  const payBlockReason = !employerApproved
+    ? employer?.status === "suspended"
+      ? "Your workspace is suspended. Contact Penroute support to restore contribution payments."
+      : "Your company registration is awaiting review by Penroute. You can add employees now; contribution payments open once your account is approved."
+    : "Contribution payments are temporarily unavailable — the payment rail has not been enabled yet. Please contact Penroute support.";
 
   const stageIdx = latest ? cycleStageIndex(latest) : -1;
   const firstName = employer?.name?.split(" ")[0] ?? "Employer";
@@ -162,18 +193,30 @@ export default function Overview() {
           <Button
             className="bg-[#007A4D] font-semibold hover:bg-[#006A43]"
             onClick={() => setWizardOpen(true)}
+            disabled={!canPay}
+            title={!canPay ? payBlockReason : undefined}
           >
             <Wallet className="size-4" /> Make Payment
           </Button>
           <Button
             variant="outline"
             className="border-[#0B1F2A]/15 font-semibold text-[#0B1F2A]"
-            onClick={() => (window.location.href = "/dashboard/employees")}
+            onClick={() => navigate("/dashboard/employees")}
           >
             Add Employee
           </Button>
         </div>
       </div>
+
+      {!canPay && (
+        <div
+          role="status"
+          className="pen-card flex items-start gap-3 border-[#D4AF37]/40 bg-[#FBF3E0] p-4 text-sm text-[#7A5A10]"
+        >
+          <TriangleAlert className="mt-0.5 size-5 shrink-0" />
+          <p>{payBlockReason}</p>
+        </div>
+      )}
 
       {/* ===== THE SCREEN: real-time pension payment status ===== */}
       {latest ? (

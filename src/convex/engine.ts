@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -14,6 +14,35 @@ import {
 import { quoteForPostings } from "./pricing";
 import { markChargeFailed, markChargePaid, syncBillingCharge } from "./billing";
 import { hashApiKey, randRef } from "../lib/security";
+import { sandboxModeEnabled } from "./environment";
+
+/** Largest single contribution amount accepted per field (₦1bn) — guards
+ *  against typos/overflow; real monthly pension amounts are far below this. */
+const MAX_CONTRIBUTION_NAIRA = 1_000_000_000;
+
+/** The batch's current payment attempt: the newest non-failed payment, else
+ *  the newest attempt. A batch can have several attempts after a failure, so
+ *  `.first()` on the index would return a stale (failed) one. */
+export async function getActivePayment(
+  ctx: { db: QueryCtx["db"] },
+  batchId: Id<"contributionBatches">,
+): Promise<Doc<"payments"> | null> {
+  const all = await ctx.db
+    .query("payments")
+    .withIndex("by_batch", (q) => q.eq("batchId", batchId))
+    .take(100);
+  if (all.length === 0) return null;
+  const newestFirst = all.sort((a, b) => b.initiatedAt - a.initiatedAt || (b._creationTime - a._creationTime));
+  return newestFirst.find((p) => p.status !== "failed") ?? newestFirst[0];
+}
+
+/** Rail mode: live (Paystack) or sandbox. Sandbox is only honoured on
+ *  deployments that explicitly opt in (PENROUTE_SANDBOX_MODE=enabled). */
+export async function resolveRailMode(ctx: MutationCtx): Promise<"live" | "sandbox" | "unavailable"> {
+  const live = (await getSystemValue(ctx, "rail_mode", 0)) === 1;
+  if (live) return "live";
+  return sandboxModeEnabled() ? "sandbox" : "unavailable";
+}
 
 // ============================================================================
 // FEE ENGINE — pricing is centralised in the pricing service (pricing.ts) and
@@ -46,7 +75,9 @@ async function webhookEvent(
     batchId: args.batchId,
     eventType: args.eventType,
     payload: args.payload,
-    status: "delivered",
+    // Event-feed record only: no outbound employer webhook delivery exists
+    // yet, so never claim "delivered".
+    status: "recorded",
     createdAt: Date.now(),
   });
 }
@@ -126,10 +157,7 @@ export const getLivePaymentContext = query({
     if (!employer) return null;
     const batch = await ctx.db.get(batchId);
     if (!batch || batch.employerId !== employer._id) return null;
-    const payment = await ctx.db
-      .query("payments")
-      .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .first();
+    const payment = await getActivePayment(ctx, batchId);
     if (!payment || payment.status === "successful" || payment.status === "failed") return null;
     return {
       paymentRef: payment.paymentRef,
@@ -274,7 +302,8 @@ async function createBatchCore(
 ) {
   const { year, month, records } = opts;
   const employer = opts.employer;
-  if (month < 1 || month > 12) throw new Error("Invalid contribution month");
+  if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error("Invalid contribution month");
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error("Invalid contribution year");
   if (records.length === 0) throw new Error("Cannot submit an empty schedule");
   // Request-size limit for BOTH doors (browser wizard + payroll API).
   if (records.length > 10_000) {
@@ -292,19 +321,16 @@ async function createBatchCore(
         )
         .sort(),
     ].join(";");
-    // FNV-1a deterministic hash
-    let h1 = 0x811c9dc5;
-    for (let i = 0; i < canonical.length; i++) {
-      h1 ^= canonical.charCodeAt(i);
-      h1 = Math.imul(h1, 0x01000193) >>> 0;
-    }
-    const fingerprint = `fp_${h1.toString(16)}`;
+    // SHA-256 over the employer id + canonical schedule. The previous 32-bit
+    // FNV hash could collide across tenants, returning ANOTHER employer's
+    // batch as a "duplicate" and silently dropping this submission.
+    const fingerprint = `fp_${await hashApiKey(`${employer._id};${canonical}`)}`;
 
     const existing = await ctx.db
       .query("contributionBatches")
       .withIndex("by_fingerprint", (q) => q.eq("fingerprint", fingerprint))
       .first();
-    if (existing && existing.status !== "failed") {
+    if (existing && existing.employerId === employer._id && existing.status !== "failed") {
       return { duplicate: true as const, batchId: existing._id, batchRef: existing.batchRef };
     }
 
@@ -379,8 +405,15 @@ async function createBatchCore(
       const pfa = pfaByCode.get(r.pfaCode);
       const dupPin = (pinSeen.get(pin) ?? 0) > 1;
       const pinCheck = pencomValidatePensionPinSandbox(pin, r.pfaCode); // PENCOM sandbox adapter
+      const finite = (n: number) => Number.isFinite(n) && n >= 0 && n <= MAX_CONTRIBUTION_NAIRA;
       const amountsOk =
-        r.employeeContribution >= 0 && r.employerContribution >= 0 && r.employeeContribution + r.employerContribution > 0;
+        finite(r.employeeContribution) &&
+        finite(r.employerContribution) &&
+        r.employeeContribution + r.employerContribution > 0;
+      // Kobo amounts: each part rounded once; the total is the exact sum of
+      // the stored parts so ledger, settlement and reconciliation agree.
+      const employeeKobo = finite(r.employeeContribution) ? Math.round(r.employeeContribution * 100) : 0;
+      const employerKobo = finite(r.employerContribution) ? Math.round(r.employerContribution * 100) : 0;
 
       let validationStatus = "valid";
       let validationError: string | undefined;
@@ -418,9 +451,9 @@ async function createBatchCore(
         // Reference a real master record: the resolved PFA, else the actual row
         // for that code (even if inactive), else first row as last resort.
         pfaId: pfa?._id ?? pfaAllByCode.get(r.pfaCode)?._id ?? pfas[0]._id,
-        employeeContribution: Math.round(r.employeeContribution * 100),
-        employerContribution: Math.round(r.employerContribution * 100),
-        totalAmount: Math.round((r.employeeContribution + r.employerContribution) * 100),
+        employeeContribution: employeeKobo,
+        employerContribution: employerKobo,
+        totalAmount: employeeKobo + employerKobo,
         contributionMonth: month,
         contributionYear: year,
         validationStatus,
@@ -517,16 +550,19 @@ export const payBatch = mutation({
     }
     const idempotencyKey = batch.fingerprint;
 
-    // IDEMPOTENT payment creation
-    const existingPayment = await ctx.db
-      .query("payments")
-      .withIndex("by_idem", (q) => q.eq("idempotencyKey", idempotencyKey))
-      .first();
+    // IDEMPOTENT payment creation — the batch's current attempt (a failed
+    // attempt may be retried with a NEW payment and reference).
+    const existingPayment = await getActivePayment(ctx, batchId);
     if (existingPayment && existingPayment.status === "successful") {
       return { paymentRef: existingPayment.paymentRef, alreadyPaid: true as const };
     }
 
-    const railMode = (await getSystemValue(ctx, "rail_mode", 0)) === 1 ? "live" : "sandbox";
+    const railMode = await resolveRailMode(ctx);
+    if (railMode === "unavailable") {
+      throw new Error(
+        "No payment rail is configured. A platform administrator must enable the live Paystack payment rail before contributions can be paid.",
+      );
+    }
 
     if (railMode === "live") {
       // ---- LIVE RAIL: initiate checkout; confirmation happens in
@@ -600,7 +636,7 @@ export const payBatch = mutation({
       throw new Error("Payment rail declined the collection");
     }
 
-    await ctx.db.insert("payments", {
+    const sandboxPaymentId = await ctx.db.insert("payments", {
       batchId,
       employerId: employer._id,
       paymentRef,
@@ -617,6 +653,7 @@ export const payBatch = mutation({
 
     await recordSuccessfulPayment(ctx, {
       batchId,
+      paymentId: sandboxPaymentId,
       employerId: employer._id,
       employerName: employer.name,
       valid,
@@ -636,6 +673,7 @@ async function recordSuccessfulPayment(
   ctx: Parameters<typeof audit>[0],
   opts: {
     batchId: Id<"contributionBatches">;
+    paymentId: Id<"payments">;
     employerId: Id<"employers">;
     employerName: string;
     valid: Doc<"contributionRecords">[];
@@ -656,10 +694,18 @@ async function recordSuccessfulPayment(
   const totalDebit = pension + fee;
   const now = Date.now();
 
-  const payment = await ctx.db
+  const payment = await ctx.db.get(opts.paymentId);
+  if (!payment || payment.batchId !== opts.batchId) throw new Error("Payment does not belong to this batch");
+  // Any other open checkout attempt for this batch is now superseded.
+  const attempts = await ctx.db
     .query("payments")
     .withIndex("by_batch", (q) => q.eq("batchId", opts.batchId))
-    .first();
+    .take(100);
+  for (const other of attempts) {
+    if (other._id !== payment._id && (other.status === "initiated" || other.status === "processing")) {
+      await ctx.db.patch(other._id, { status: "failed", failureReason: "Superseded by a confirmed payment for this batch" });
+    }
+  }
 
   // ---- DOUBLE-ENTRY LEDGER (spec §25) — pension funds ≠ platform revenue ----
   const entryRef = randRef("LED", 6);
@@ -681,7 +727,7 @@ async function recordSuccessfulPayment(
     await ctx.db.insert("ledgerEntries", {
       entryRef,
       batchId: opts.batchId,
-      paymentId: payment?._id,
+      paymentId: payment._id,
       employerId: opts.employerId,
       pfaId: row.pfaId,
       account: row.account,
@@ -694,13 +740,11 @@ async function recordSuccessfulPayment(
     });
   }
 
-  if (payment) {
-    await ctx.db.patch(payment._id, {
-      status: "successful",
-      confirmedAt: now,
-      providerRef: opts.providerRef ?? payment.providerRef,
-    });
-  }
+  await ctx.db.patch(payment._id, {
+    status: "successful",
+    confirmedAt: now,
+    providerRef: opts.providerRef ?? payment.providerRef,
+  });
 
   await ctx.db.patch(opts.batchId, {
     paymentStatus: "successful",
@@ -733,6 +777,10 @@ async function recordSuccessfulPayment(
   // Recognise the billing charge as revenue only now that payment is confirmed.
   await markChargePaid(ctx, { batchId: opts.batchId, paymentRef: opts.paymentRef });
 
+  // Drive allocation → settlement → reconciliation server-side, so a payment
+  // confirmed by webhook (browser closed) never strands the batch.
+  await ctx.scheduler.runAfter(0, internal.engine.processPipeline, { batchId: opts.batchId });
+
   return { pension, fee, totalDebit };
 }
 
@@ -750,57 +798,6 @@ function dedupeByPfa(valid: { pfaId: Id<"pfas">; totalAmount: number }[], pfaCod
   }
   return [...map.values()];
 }
-
-/** Live rail: mark a verified-failed payment (declined/abandoned/underpaid). */
-export const markLivePaymentFailed = mutation({
-  args: { batchId: v.id("contributionBatches"), reason: v.string() },
-  handler: async (ctx, { batchId, reason }) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    const employer = await getEmployerForEngine(ctx, user);
-    if (!employer) throw new Error("No employer profile");
-    const batch = await ctx.db.get(batchId);
-    if (!batch || batch.employerId !== employer._id) throw new Error("Batch not found");
-
-    const payment = await ctx.db
-      .query("payments")
-      .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .first();
-    if (!payment) throw new Error("No payment found for this batch");
-    if (payment.status === "successful") throw new Error("Payment already confirmed");
-
-    await ctx.db.patch(payment._id, { status: "failed", failureReason: reason });
-    await ctx.db.patch(batchId, { paymentStatus: "failed" });
-    await markChargeFailed(ctx, batchId);
-    await ctx.db.insert("exceptions", {
-      batchId,
-      employerId: employer._id,
-      exceptionRef: randRef("EXC", 6),
-      type: "payment_mismatch",
-      description: `Live payment ${payment.paymentRef} not successful: ${reason}`,
-      amount: payment.amount,
-      status: "open",
-      responsibleParty: "employer",
-      createdAt: Date.now(),
-    });
-    await audit(ctx, {
-      actor: user.email ?? "unknown",
-      action: "payment_failed",
-      entityType: "payment",
-      entityId: payment.paymentRef,
-      employerId: employer._id,
-      batchId,
-      details: reason,
-    });
-    await webhookEvent(ctx, {
-      employerId: employer._id,
-      batchId,
-      eventType: "payment.failed",
-      payload: JSON.stringify({ paymentRef: payment.paymentRef, reason }),
-    });
-    return { ok: true };
-  },
-});
 
 // ============================================================================
 // SYSTEM PATHS — invoked by the Paystack webhook (paystackWebhook.ts).
@@ -845,8 +842,25 @@ export const finalizeLivePaymentSystem = internalMutation({
     });
     const feePerEmployee = charge.feePerPostingKobo;
 
+    if (batch.status !== "awaiting_payment") {
+      // The batch was already paid through another attempt — never double-book.
+      await ctx.db.patch(paymentId, { status: "failed", failureReason: "Duplicate payment for an already-paid batch — refund required" });
+      await ctx.db.insert("exceptions", {
+        batchId: payment.batchId,
+        employerId: payment.employerId,
+        exceptionRef: randRef("EXC", 6),
+        type: "payment_mismatch",
+        description: `Payment ${payment.paymentRef} was confirmed for a batch that is already paid — refund required`,
+        amount: payment.amount,
+        status: "open",
+        responsibleParty: "platform",
+        createdAt: Date.now(),
+      });
+      return { ok: true as const, duplicateBatchPayment: true };
+    }
     await recordSuccessfulPayment(ctx, {
       batchId: payment.batchId,
+      paymentId: payment._id,
       employerId: payment.employerId,
       employerName: employer?.name ?? "Employer",
       valid,
@@ -901,58 +915,6 @@ export const markLivePaymentFailedSystem = internalMutation({
   },
 });
 
-/** Live rail: finalize a VERIFIED successful payment (called by the
- *  confirmLivePayment action after Paystack verification). */
-export const finalizeLivePayment = internalMutation({
-  args: { batchId: v.id("contributionBatches"), providerFeesKobo: v.optional(v.number()) },
-  handler: async (ctx, { batchId, providerFeesKobo }) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    const employer = await getEmployerForEngine(ctx, user);
-    if (!employer) throw new Error("No employer profile");
-    const batch = await ctx.db.get(batchId);
-    if (!batch || batch.employerId !== employer._id) throw new Error("Batch not found");
-
-    const payment = await ctx.db
-      .query("payments")
-      .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .first();
-    if (!payment) throw new Error("No payment found for this batch");
-    if (payment.status === "successful") {
-      return { ok: true as const, status: "processing" };
-    }
-
-    const records = await ctx.db
-      .query("contributionRecords")
-      .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .take(10_000);
-    const valid = records.filter((r) => r.validationStatus === "valid");
-    const pensionKobo = valid.reduce((s, r) => s + r.totalAmount, 0);
-    const charge = await syncBillingCharge(ctx, {
-      batch,
-      postingCount: valid.length,
-      contributionKobo: pensionKobo,
-      actor: user.email ?? "unknown",
-    });
-    const feePerEmployee = charge.feePerPostingKobo;
-
-    await recordSuccessfulPayment(ctx, {
-      batchId,
-      employerId: employer._id,
-      employerName: employer.name,
-      valid,
-      feePerEmployee,
-      paymentRef: payment.paymentRef,
-      rail: payment.rail,
-      providerRef: payment.providerRef,
-      actor: user.email ?? "unknown",
-    });
-    void providerFeesKobo;
-
-    return { ok: true as const, status: "processing" };
-  },
-});
-
 // ============================================================================
 // STEP 3 — Pipeline: allocate → settle → PFA ack → reconcile → complete
 // Idempotent: settlements and acknowledgements are only created if missing, so
@@ -998,7 +960,11 @@ export const processPipeline = internalMutation({
   handler: async (ctx, { batchId }) => {
     const batch = await ctx.db.get(batchId);
     if (!batch) throw new Error("Batch not found");
-    if (batch.status !== "processing") throw new Error(`Batch not in processing state (${batch.status})`);
+    // Several triggers may schedule this (payment confirmation, browser
+    // resume, PFA dispatch loop, settlement confirmation). Anything not in
+    // `processing` is already finished or not yet paid: a harmless no-op.
+    if (batch.status !== "processing") return { status: batch.status, skipped: true as const };
+    const sandbox = sandboxModeEnabled();
 
     const now = Date.now();
 
@@ -1033,11 +999,8 @@ export const processPipeline = internalMutation({
 
     // ---- SETTLEMENT ENGINE: one instruction per PFA through the sandbox rail ----
     await ctx.db.patch(batchId, { settlementStatus: "processing" });
-    const payment = await ctx.db
-      .query("payments")
-      .withIndex("by_batch", (q) => q.eq("batchId", batchId))
-      .first();
-    if (!payment) throw new Error("Payment missing for batch");
+    const payment = await getActivePayment(ctx, batchId);
+    if (!payment || payment.status !== "successful") throw new Error("Confirmed payment missing for batch");
 
     const existingSettlements = await ctx.db
       .query("settlements")
@@ -1101,6 +1064,32 @@ export const processPipeline = internalMutation({
         });
         continue;
       }
+      if (!sandbox) {
+        // PRODUCTION, no live PFA integration: the instruction is created and
+        // stays PENDING until an authorised PFA operator or platform admin
+        // confirms the remittance/posting (settlementOps.confirmSettlement).
+        // Nothing is ever reported as settled or posted without that evidence.
+        const pendingId = await ctx.db.insert("settlements", {
+          batchId,
+          paymentId: payment._id,
+          pfaId: g.pfaId,
+          settlementRef,
+          amount: g.amount,
+          employeeCount: g.count,
+          status: "pending",
+          instructedAt: now,
+        });
+        settlementByPfa.set(key, { ...g, _id: pendingId, settlementRef });
+        await logIntegration(ctx, {
+          adapter: "pfa_manual",
+          operation: "settlement_instruction_created",
+          requestSummary: `${settlementRef} ₦${(g.amount / 100).toLocaleString()} → PFA (manual confirmation)`,
+          responseSummary: "awaiting PFA remittance/posting confirmation",
+          success: true,
+          batchId,
+        });
+        continue;
+      }
       const railResult = settlementRailSandboxSubmit(settlementRef, g.amount);
       const settlementId = await ctx.db.insert("settlements", {
         batchId,
@@ -1153,7 +1142,11 @@ export const processPipeline = internalMutation({
       (s) => s.status === "pending" || s.status === "processing",
     );
     if (inFlight.length > 0) {
-      await ctx.scheduler.runAfter(0, internal.pfaDispatch.dispatchLiveSettlements, { batchId });
+      // Only live-API PFAs are dispatched automatically; manual/unintegrated
+      // PFAs wait for an explicit confirmation.
+      if (inFlight.some((s) => pfaMode.get(String(s.pfaId)) === "live_api")) {
+        await ctx.scheduler.runAfter(0, internal.pfaDispatch.dispatchLiveSettlements, { batchId });
+      }
       if (settledSettlements.length === 0) {
         await ctx.db.patch(batchId, { settlementStatus: "processing" });
       } else {
@@ -1192,6 +1185,9 @@ export const processPipeline = internalMutation({
       // Live PFAs: the dispatch recorder already wrote the real acknowledgement
       // (received/accepted/posted) — never synthesize one here.
       if (pfaMode.get(String(settlement.pfaId)) === "live_api") continue;
+      // Outside sandbox deployments an acknowledgement is only ever written by
+      // the confirmation path itself — never synthesised.
+      if (!sandbox) continue;
 
       const ack = pfaAcknowledgeSandbox();
       await ctx.db.insert("pfaAcknowledgements", {
@@ -1240,7 +1236,12 @@ export const processPipeline = internalMutation({
         pfaStatus: settlementStatus === "settled" ? (ackStatus ?? "awaiting_ack") : "awaiting_ack",
       });
     }
-    await ctx.db.patch(batchId, { pfaStatus: "posted" });
+    await ctx.db.patch(batchId, {
+      pfaStatus:
+        settledSettlements.length === finalSettlements.length && finalSettlements.length > 0
+          ? "posted"
+          : "awaiting_ack",
+    });
 
     // ---- RECONCILIATION ENGINE (spec §16): verify every figure ----
     const schedulePension = valid.reduce((s, r) => s + r.totalAmount, 0);
