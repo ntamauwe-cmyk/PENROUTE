@@ -21,6 +21,8 @@ import type * as githubPr from "../githubPr.js";
 import type * as githubSync from "../githubSync.js";
 import type * as githubSyncData from "../githubSyncData.js";
 import type * as http from "../http.js";
+import type * as kyb from "../kyb.js";
+import type * as notifications from "../notifications.js";
 import type * as payments from "../payments.js";
 import type * as payrollApi from "../payrollApi.js";
 import type * as paystackWebhook from "../paystackWebhook.js";
@@ -54,6 +56,8 @@ declare const fullApi: ApiFromModules<{
   githubSync: typeof githubSync;
   githubSyncData: typeof githubSyncData;
   http: typeof http;
+  kyb: typeof kyb;
+  notifications: typeof notifications;
   payments: typeof payments;
   payrollApi: typeof payrollApi;
   paystackWebhook: typeof paystackWebhook;

@@ -15,6 +15,7 @@ import { quoteForPostings } from "./pricing";
 import { markChargeFailed, markChargePaid, syncBillingCharge } from "./billing";
 import { hashApiKey, randRef } from "../lib/security";
 import { sandboxModeEnabled } from "./environment";
+import { notify } from "./notifications";
 
 /** Largest single contribution amount accepted per field (₦1bn) — guards
  *  against typos/overflow; real monthly pension amounts are far below this. */
@@ -776,6 +777,14 @@ async function recordSuccessfulPayment(
 
   // Recognise the billing charge as revenue only now that payment is confirmed.
   await markChargePaid(ctx, { batchId: opts.batchId, paymentRef: opts.paymentRef });
+  await notify(ctx, {
+    audience: "employer",
+    employerId: opts.employerId,
+    kind: "payment_confirmed",
+    title: "Payment confirmed",
+    body: `We received ₦${(totalDebit / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} (ref ${opts.paymentRef}). Contributions are now being remitted to your employees' PFAs; you'll be notified when every PFA confirms posting.`,
+    link: "/dashboard/batches",
+  });
 
   // Drive allocation → settlement → reconciliation server-side, so a payment
   // confirmed by webhook (browser closed) never strands the batch.
@@ -895,6 +904,14 @@ export const markLivePaymentFailedSystem = internalMutation({
       status: "open",
       responsibleParty: "employer",
       createdAt: Date.now(),
+    });
+    await notify(ctx, {
+      audience: "employer",
+      employerId: payment.employerId,
+      kind: "payment_failed",
+      title: "Payment not completed",
+      body: `Payment ${payment.paymentRef} for ₦${(payment.amount / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} was not successful (${reason}). No contributions were remitted. You can retry from your dashboard.`,
+      link: "/dashboard",
     });
     await audit(ctx, {
       actor: "paystack-webhook",
@@ -1080,6 +1097,15 @@ export const processPipeline = internalMutation({
           instructedAt: now,
         });
         settlementByPfa.set(key, { ...g, _id: pendingId, settlementRef });
+        await notify(ctx, {
+          audience: "pfa",
+          pfaId: g.pfaId,
+          kind: "settlement_awaiting_confirmation",
+          title: `Remittance ${settlementRef} awaiting your confirmation`,
+          body: `₦${(g.amount / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} for ${g.count} member(s). Confirm with your posting reference once received and posted.`,
+          link: "/pfa/settlements",
+          email: false,
+        });
         await logIntegration(ctx, {
           adapter: "pfa_manual",
           operation: "settlement_instruction_created",
@@ -1269,6 +1295,13 @@ export const processPipeline = internalMutation({
           responsibleParty: "platform",
           createdAt: Date.now(),
         });
+        await notify(ctx, {
+          audience: "admin",
+          kind: "reconciliation_mismatch",
+          title: `Reconciliation mismatch on ${batch.batchRef}`,
+          body: `Payment, settlement and schedule totals disagree (discrepancy ₦${(discrepancy / 100).toLocaleString()}). Investigate in the admin console.`,
+          link: "/admin",
+        });
       }
     }
 
@@ -1299,6 +1332,16 @@ export const processPipeline = internalMutation({
           ? `Reconciled: schedule = settlements = payment = ₦${(paymentSum / 100).toLocaleString()}`
           : "Mismatch detected — exception raised",
     });
+    if (reconciliationStatus === "reconciled") {
+      await notify(ctx, {
+        audience: "employer",
+        employerId: batch.employerId,
+        kind: "batch_completed",
+        title: `Contributions posted — ${batch.contributionYear}-${String(batch.contributionMonth).padStart(2, "0")}`,
+        body: `Every PFA confirmed posting for ${batch.batchRef} and the batch is reconciled. Your payment certificate is available under Pension Payments.`,
+        link: "/dashboard/batches",
+      });
+    }
     if (reconciliationStatus === "reconciled") {
       await webhookEvent(ctx, {
         employerId: batch.employerId,

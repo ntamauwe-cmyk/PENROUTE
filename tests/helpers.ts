@@ -45,10 +45,30 @@ export async function approvedEmployer(t: Backend, email: string, rc: string) {
     contactEmail: email,
     contactPhone: "+2348000000000",
     representativeName: "Test Rep",
+    acceptTerms: true,
   });
   const admin = await ensureAdmin(t);
+  await acceptCac(t, owner.client, admin.client);
   await admin.client.mutation(api.admin.adminSetEmployerStatus, { employerId, status: "active" });
   return { ...owner, employerId };
+}
+
+/** Upload a (PDF-signed) CAC certificate as the employer and accept it as admin. */
+export async function acceptCac(
+  t: Backend,
+  ownerClient: ReturnType<Backend["withIdentity"]>,
+  adminClient: ReturnType<Backend["withIdentity"]>,
+) {
+  const { api } = await import("../src/convex/_generated/api");
+  const body = new Uint8Array(512);
+  body.set([0x25, 0x50, 0x44, 0x46, 0x2d]);
+  const storageId = await t.run((ctx) => ctx.storage.store(new Blob([body], { type: "application/pdf" })));
+  const { documentId } = await ownerClient.action(api.kyb.attachDocument, {
+    storageId,
+    kind: "cac_certificate",
+    fileName: "cac.pdf",
+  });
+  await adminClient.mutation(api.kyb.reviewDocument, { documentId, decision: "accepted" });
 }
 
 let adminCache = new WeakMap<Backend, Awaited<ReturnType<typeof signedInAs>>>();

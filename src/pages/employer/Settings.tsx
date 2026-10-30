@@ -26,6 +26,7 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 
 import { toast } from "sonner";
+import { KybDocumentsUpload } from "@/components/KybDocuments";
 
 export default function Settings() {
   const { employer, loading } = useEmployer();
@@ -49,7 +50,7 @@ export default function Settings() {
 
       {!employer ? (
         <div className="pen-card p-8 text-center text-sm text-muted-foreground">
-          No employer profile yet — load the demo workspace from the Dashboard.
+          No employer profile yet — register your company from the Dashboard.
         </div>
       ) : (
         <section className="pen-card-lg p-6">
@@ -60,7 +61,10 @@ export default function Settings() {
             <div>
               <h2 className="font-bold tracking-tight">{employer.name}</h2>
               <p className="text-xs text-muted-foreground">
-                Employer profile · verified against KYC requirements
+                Employer profile ·{" "}
+                {employer.kycStatus === "verified"
+                  ? "KYB verified by Penroute"
+                  : "KYB review pending — upload your documents below"}
               </p>
             </div>
             <Badge
@@ -100,6 +104,8 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      {employer && <KybDocumentsUpload />}
 
       {/* Payroll/HR API integration (spec §4) */}
       <PayrollIntegrationCard keyStatus={keyStatus ?? null} hasEmployer={Boolean(employer)} />

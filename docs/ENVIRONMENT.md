@@ -16,7 +16,10 @@
 | `CONVEX_DEPLOYMENT` | local `.env` | yes (local/dev) | Target deployment for `convex dev` |
 | `GITHUB_TOKEN` | Convex deployment env (Keys tab) | for GitHub sync | Classic PAT with **`repo` + `workflow`** scopes; used only by internal/admin-gated sync & PR actions |
 | `PAYSTACK_SECRET_KEY` | Convex deployment env (Keys tab) | for live payments | `sk_test_…` sandbox / `sk_live_…` production; webhook HMAC verification |
-| `EMAIL_OTP_API_KEY` | Convex deployment env (Keys tab) | **yes** (sign-in) | OTP email relay key. No longer hard-coded: without it, sign-in codes cannot be sent. The previously committed key is public in git history — rotate it. |
+| `EMAIL_OTP_API_KEY` | Convex deployment env | legacy fallback only | OTP email relay key. No longer hard-coded: without it, sign-in codes cannot be sent. The previously committed key is public in git history — rotate it. |
+| `RESEND_API_KEY` | Convex deployment env | **yes** (email) | Resend API key — sends sign-in codes and employer notification emails. Replaces the Freebuff OTP relay. |
+| `NOTIFY_FROM_EMAIL` | Convex deployment env | **yes** (email) | Sender, e.g. `Penroute <no-reply@penroute.net>` (domain verified in Resend). |
+| `PENROUTE_APP_URL` | Convex deployment env | optional | Public app URL used in email links (default `https://penroute.net`). |
 | `PENROUTE_SANDBOX_MODE` | Convex deployment env | dev/preview only | `enabled` marks a NON-production deployment: allows the simulated sandbox payment rail, sandbox PFA acknowledgements, demo seeding and guest workspaces. **Never set on production.** Unset = production behaviour (fail closed). |
 | `PENROUTE_BOOTSTRAP_ADMIN_EMAILS` | Convex deployment env | first launch | Comma-separated operator emails allowed to claim the one-time platform-admin bootstrap. Unset = nobody can self-claim admin (use `npx convex run admin:grantPlatformAdmin '{"email":"…"}'`). |
 | `VLY_CONVEX_AUTH_ISSUER` | Convex deployment env | Freebuff previews only | When set, tokens from this issuer are trusted for sign-in. Leave UNSET on production — no third-party issuer is trusted by default. |

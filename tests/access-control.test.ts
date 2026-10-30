@@ -71,6 +71,7 @@ describe("registration & onboarding", () => {
         contactEmail: "a@b.test",
         contactPhone: "1",
         representativeName: "x",
+        acceptTerms: true,
       }),
     ).rejects.toThrow();
   });
@@ -85,6 +86,7 @@ describe("registration & onboarding", () => {
       contactEmail: "hr@newco.test",
       contactPhone: "+234",
       representativeName: "Ada",
+      acceptTerms: true,
     });
     const e = await t.run((ctx) => ctx.db.get(employerId));
     expect(e?.status).toBe("pending");
@@ -102,6 +104,7 @@ describe("registration & onboarding", () => {
         contactEmail: "copy@cat.test",
         contactPhone: "",
         representativeName: "",
+        acceptTerms: true,
       }),
     ).rejects.toThrow(/already exists/);
   });
@@ -169,7 +172,7 @@ describe("tenant isolation", () => {
   test("signed-out callers are refused by every privileged function", async () => {
     await expect(t.query(api.admin.getAdminOverview, {})).rejects.toThrow(/Not authenticated/);
     await expect(t.mutation(api.pension.registerEmployer, {
-      name: "x", rcNumber: "x", tin: "x", registeredAddress: "", contactEmail: "a@b.c", contactPhone: "", representativeName: "",
+      name: "x", rcNumber: "x", tin: "x", registeredAddress: "", contactEmail: "a@b.c", contactPhone: "", representativeName: "", acceptTerms: true,
     })).rejects.toThrow(/Not authenticated/);
     await expect(t.mutation(api.engine.prepareBatch, { year: 2026, month: 1, records: schedule(1) })).rejects.toThrow(
       /Not authenticated/,

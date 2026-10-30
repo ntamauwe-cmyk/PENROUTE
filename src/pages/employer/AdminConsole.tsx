@@ -18,6 +18,7 @@ import { ClayTable, LoadingBlock, PageHeader, StatTile, StatusPill } from "@/com
 import { fmtDateTime, fmtNaira } from "@/lib/pension";
 import type { Id } from "@/convex/_generated/dataModel";
 import { SettlementConfirmations } from "@/components/SettlementConfirmations";
+import { KybDocumentsReview } from "@/components/KybDocuments";
 import {
   CheckCircle2,
   Database,
@@ -232,12 +233,12 @@ function AdminConsoleBody() {
         <>
           {/* Platform stats */}
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <StatTile label="Employers" value={String(overview.employersCount)} />
-            <StatTile label="Batches" value={String(overview.batchesCount)} />
+            <StatTile label="Employers" value={`${overview.employersCount.toLocaleString()}${overview.capped.employers ? "+" : ""}`} />
+            <StatTile label="Batches" value={`${overview.batchesCount.toLocaleString()}${overview.capped.batches ? "+" : ""}`} />
             <StatTile label="Open exceptions" value={String(overview.openExceptions)} />
             <StatTile label="Pension processed" value={fmtNaira(overview.totalPension, { compact: true })} />
             <StatTile label="Platform revenue" value={fmtNaira(overview.totalFees, { compact: true })} />
-            <StatTile label="Ledger rows" value={String(overview.ledgerCount)} />
+            <StatTile label="Ledger rows" value={`${overview.ledgerCount.toLocaleString()}${overview.capped.ledger ? "+" : ""}`} />
           </section>
 
           {/* PFA statistics — real database values */}
@@ -567,6 +568,12 @@ function AdminConsoleBody() {
                         TIN {e.tin} · {e.representativeName} · {e.contactPhone}
                       </p>
                       <p className="text-xs text-muted-foreground">{e.registeredAddress}</p>
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs font-semibold text-[#007A4D]">
+                          KYB documents
+                        </summary>
+                        <KybDocumentsReview employerId={e._id} />
+                      </details>
                     </td>
                     <td className="px-3 py-2.5 font-mono text-xs">{e.rcNumber}</td>
                     <td className="px-3 py-2.5 tabular-nums">{e.employees}</td>

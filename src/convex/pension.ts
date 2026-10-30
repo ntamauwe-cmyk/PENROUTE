@@ -6,6 +6,8 @@ import { audit, getCurrentEmployer, getEmployerForUser } from "./employers";
 import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
 import { applyPfaSeed, isSelectable } from "./pfaDirectory";
 import { bootstrapAdminEmails, requireSandboxMode, sandboxModeEnabled } from "./environment";
+import { notify } from "./notifications";
+import { TERMS_VERSION } from "../lib/legal";
 
 /** RC number of the seeded demo employer — the ONLY workspace demo-claiming may touch. */
 const DEMO_EMPLOYER_RC = "RC-1938476";
@@ -496,10 +498,12 @@ export const registerEmployer = mutation({
     contactEmail: v.string(),
     contactPhone: v.string(),
     representativeName: v.string(),
+    acceptTerms: v.boolean(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { acceptTerms, ...args }) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
+    if (!acceptTerms) throw new Error("Accept the Terms of Service and Privacy Notice to register");
     if (user.isAnonymous && !sandboxModeEnabled()) {
       throw new Error("Sign in with your work email to register a company");
     }
@@ -530,6 +534,9 @@ export const registerEmployer = mutation({
       status: "pending",
       kycStatus: "pending",
       ownerUserId: user._id,
+      termsAcceptedAt: now,
+      termsVersion: TERMS_VERSION,
+      termsAcceptedBy: user._id,
       createdAt: now,
     });
 
@@ -542,8 +549,23 @@ export const registerEmployer = mutation({
       entityType: "employer",
       entityId: employerId,
       employerId,
-      details: `${args.name.trim()} (${args.rcNumber.trim()}) onboarded via self-service`,
+      details: `${args.name.trim()} (${args.rcNumber.trim()}) onboarded via self-service; accepted terms ${TERMS_VERSION}`,
       createdAt: now,
+    });
+    await notify(ctx, {
+      audience: "admin",
+      kind: "employer_application",
+      title: `New employer application: ${args.name.trim()}`,
+      body: `${args.name.trim()} (${args.rcNumber.trim()}) registered and is awaiting KYB review.`,
+      link: "/admin",
+    });
+    await notify(ctx, {
+      audience: "employer",
+      employerId,
+      kind: "registration_received",
+      title: "Registration received",
+      body: `Thanks for registering ${args.name.trim()} on Penroute. Upload your company documents in Settings; we'll notify you as soon as your account is approved for contribution payments.`,
+      link: "/dashboard/settings",
     });
 
     return { employerId };
@@ -608,6 +630,8 @@ export const seedDemoData = mutation({
         createdAt: now,
       });
     }
+
+    await ctx.db.patch(employerId, { employeeCount: employeeNames.length });
 
     // NOTE: processing-fee pricing is centralised in the pricing service
     // (pricing.ts / src/lib/pricing.ts) — no flat-fee key is seeded here.
@@ -754,6 +778,7 @@ export const addEmployee = mutation({
       active: true,
       createdAt: now,
     });
+    await ctx.db.patch(employer._id, { employeeCount: (employer.employeeCount ?? 0) + 1 });
     await audit(ctx, {
       actor: user.email ?? "unknown",
       action: "employee_added",

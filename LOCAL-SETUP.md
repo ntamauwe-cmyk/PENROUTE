@@ -32,7 +32,8 @@ import with `npx convex import`.
 ```powershell
 npx convex env set PENROUTE_SANDBOX_MODE enabled          # DEV ONLY: simulated payments + demo data
 npx convex env set PENROUTE_BOOTSTRAP_ADMIN_EMAILS you@yourcompany.com
-npx convex env set EMAIL_OTP_API_KEY <your OTP relay key> # needed to email sign-in codes
+npx convex env set RESEND_API_KEY re_xxx                  # from resend.com: sign-in codes + notifications
+npx convex env set NOTIFY_FROM_EMAIL "Penroute <no-reply@penroute.net>"
 npx convex run pfaDirectory:seedDirectory                  # load the 19 licensed PFAs
 ```
 `CONVEX_SITE_URL` and `JWT_PRIVATE_KEY`/`JWKS` for sign-in: run once
@@ -58,9 +59,9 @@ bun scripts/test-pricing.ts
 
 ## 7. Going to production on penroute.net (later)
 1. `npx convex deploy` → creates the production Convex deployment.
-   Set `EMAIL_OTP_API_KEY`, `PAYSTACK_SECRET_KEY`, `PENROUTE_BOOTSTRAP_ADMIN_EMAILS`
+   Set `RESEND_API_KEY`, `NOTIFY_FROM_EMAIL`, `PAYSTACK_SECRET_KEY`, `PENROUTE_BOOTSTRAP_ADMIN_EMAILS`
    on it with `npx convex env set --prod ...` — **never** `PENROUTE_SANDBOX_MODE`.
-2. Host the frontend (`bun run build` → `dist/`) on Vercel, Netlify or Cloudflare Pages,
+2. Host the frontend (`bun run build` → `dist/`) on Vercel (`vercel.json` included) or Cloudflare Pages / Netlify (`public/_redirects`, `public/_headers` included),
    with `VITE_CONVEX_URL` = the production Convex URL.
 3. In Cloudflare DNS for penroute.net, point the domain at that host
    (currently it returns error 522 — nothing is answering behind Cloudflare).

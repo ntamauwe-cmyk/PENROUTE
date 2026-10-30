@@ -400,13 +400,18 @@ export default function Landing() {
             Pension contribution payment &amp; settlement infrastructure.
             <br className="sm:hidden" />
             <span className="hidden sm:inline"> · </span>
-            PENCOM/PFA connections run through clearly-labelled sandbox adapters.
+            Payments processed by Paystack; contributions are posted only when each PFA confirms.
             <br />
-            <a
-              href="https://penroute.net"
-              className="font-semibold text-[#007A4D] hover:underline"
-            >
-              penroute.net
+            <a href="/terms" className="font-semibold text-[#007A4D] hover:underline">
+              Terms
+            </a>
+            {" · "}
+            <a href="/privacy" className="font-semibold text-[#007A4D] hover:underline">
+              Privacy
+            </a>
+            {" · "}
+            <a href="mailto:support@penroute.net" className="font-semibold text-[#007A4D] hover:underline">
+              Support
             </a>
           </p>
         </div>

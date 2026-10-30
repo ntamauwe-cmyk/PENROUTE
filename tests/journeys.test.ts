@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api } from "../src/convex/_generated/api";
 import {
+  acceptCac,
   ensureAdmin,
   hmacSha512Hex,
   newBackend,
@@ -40,6 +41,7 @@ describe("production journey: employer → Paystack → PFA → reconciliation �
       contactEmail: "payroll@zenith-foods.test",
       contactPhone: "+2348011112222",
       representativeName: "Bola Ade",
+      acceptTerms: true,
     });
     const pfas = await owner.client.query(api.pension.listPfas, {});
     expect(pfas.length).toBeGreaterThanOrEqual(19);
@@ -65,6 +67,11 @@ describe("production journey: employer → Paystack → PFA → reconciliation �
     const row = list.find((e) => e._id === employerId)!;
     expect(row.tin).toBe("TIN-778899-0001");
     expect(row.status).toBe("pending");
+    // Approval is refused until the CAC certificate is uploaded and accepted.
+    await expect(
+      admin.client.mutation(api.admin.adminSetEmployerStatus, { employerId, status: "active" }),
+    ).rejects.toThrow(/CAC certificate/);
+    await acceptCac(t, owner.client, admin.client);
     await admin.client.mutation(api.admin.adminSetEmployerStatus, { employerId, status: "active" });
 
     // 3. Monthly schedule → quote → Paystack checkout handoff.
@@ -169,8 +176,9 @@ describe("production journey: employer → Paystack → PFA → reconciliation �
     const mk = async (email: string, rc: string) => {
       const u = await signedInAs(t, { email });
       const { employerId } = await u.client.mutation(api.pension.registerEmployer, {
-        name: rc, rcNumber: rc, tin: "T", registeredAddress: "A", contactEmail: email, contactPhone: "1", representativeName: "R",
+        name: rc, rcNumber: rc, tin: "T", registeredAddress: "A", contactEmail: email, contactPhone: "1", representativeName: "R", acceptTerms: true,
       });
+      await acceptCac(t, u.client, admin.client);
       await admin.client.mutation(api.admin.adminSetEmployerStatus, { employerId, status: "active" });
       return { ...u, employerId };
     };

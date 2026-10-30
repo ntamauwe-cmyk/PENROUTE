@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit } from "./employers";
 import { integrationStatusLabel, isSelectable } from "./pfaDirectory";
@@ -121,15 +121,28 @@ export const claimAccess = mutation({
 // PORTAL READS — all strictly scoped to the session user's pfaId.
 // ============================================================================
 
-async function maps(ctx: QueryCtx) {
-  const [batches, employers] = await Promise.all([
-    ctx.db.query("contributionBatches").take(10_000),
-    ctx.db.query("employers").take(10_000),
-  ]);
-  return {
-    batchById: new Map(batches.map((b) => [b._id, b])),
-    employerById: new Map(employers.map((e) => [e._id, e])),
-  };
+/** Load only the referenced documents (never whole platform tables): a
+ *  PFA's queries must not scan every employer/batch on the platform. */
+async function byIds<T extends "contributionBatches" | "employers">(
+  ctx: QueryCtx,
+  ids: Iterable<Id<T>>,
+): Promise<Map<Id<T>, Doc<T>>> {
+  const unique = [...new Set(ids)];
+  const docs = await Promise.all(unique.map((id) => ctx.db.get(id)));
+  const out = new Map<Id<T>, Doc<T>>();
+  docs.forEach((d, i) => {
+    if (d) out.set(unique[i], d as Doc<T>);
+  });
+  return out;
+}
+
+async function maps(ctx: QueryCtx, rows: { batchId: Id<"contributionBatches">; employerId?: Id<"employers"> }[]) {
+  const batchById = await byIds(ctx, rows.map((r) => r.batchId));
+  const employerIds: Id<"employers">[] = [];
+  for (const r of rows) if (r.employerId) employerIds.push(r.employerId);
+  for (const b of batchById.values()) employerIds.push(b.employerId);
+  const employerById = await byIds(ctx, employerIds);
+  return { batchById, employerById };
 }
 
 /** Overview: PFA profile + portfolio statistics + recent activity. */
@@ -141,14 +154,17 @@ export const getOverview = query({
 
     const [pfa, settlements, records, employees, exceptions] = await Promise.all([
       ctx.db.get(pfaId),
-      ctx.db.query("settlements").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
-      ctx.db.query("contributionRecords").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
-      ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
-      ctx.db.query("exceptions").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
+      // Bounded per table so one PFA's overview stays well inside Convex's
+      // per-query read limits as volume grows (newest rows first).
+      ctx.db.query("settlements").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).order("desc").take(3_000),
+      ctx.db.query("contributionRecords").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).order("desc").take(6_000),
+      ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(5_000),
+      ctx.db.query("exceptions").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).order("desc").take(1_000),
     ]);
     if (!pfa) throw new Error("PFA record not found");
 
-    const { batchById, employerById } = await maps(ctx);
+    const recentForMaps = [...settlements].sort((a, b) => b.instructedAt - a.instructedAt).slice(0, 50);
+    const { batchById, employerById } = await maps(ctx, recentForMaps);
 
     const settled = settlements.filter((s) => s.status === "settled");
     const pending = settlements.filter((s) => s.status === "pending" || s.status === "processing");
@@ -228,7 +244,7 @@ export const listSettlements = query({
       .query("settlements")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
       .take(10_000);
-    const { batchById, employerById } = await maps(ctx);
+    const { batchById, employerById } = await maps(ctx, settlements);
 
     const rows = await Promise.all(
       settlements.map(async (s) => {
@@ -272,8 +288,9 @@ export const listContributions = query({
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
-      .take(10_000);
-    const { batchById, employerById } = await maps(ctx);
+      .order("desc")
+      .take(500);
+    const { batchById, employerById } = await maps(ctx, records);
 
     return records
       .sort((a, b) => b.createdAt - a.createdAt)
@@ -313,8 +330,7 @@ export const listEmployees = query({
       .query("employees")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
       .take(10_000);
-    const employers = await ctx.db.query("employers").take(10_000);
-    const employerById = new Map(employers.map((e) => [e._id, e]));
+    const employerById = await byIds(ctx, employees.map((e) => e.employerId));
 
     return employees
       .sort((a, b) => a.fullName.localeCompare(b.fullName))
@@ -336,12 +352,14 @@ export const listEmployers = query({
   handler: async (ctx) => {
     const user = await requirePfaUser(ctx);
     const pfaId = user.pfaId!;
-    const [employees, records, employers] = await Promise.all([
+    const [employees, records] = await Promise.all([
       ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
       ctx.db.query("contributionRecords").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(10_000),
-      ctx.db.query("employers").take(10_000),
     ]);
-    const employerById = new Map(employers.map((e) => [e._id, e]));
+    const employerById = await byIds(ctx, [
+      ...employees.map((e) => e.employerId),
+      ...records.map((r) => r.employerId),
+    ]);
 
     type Row = {
       employerId: string;
@@ -393,8 +411,10 @@ export const listExceptions = query({
       .query("exceptions")
       .withIndex("by_pfa", (q) => q.eq("pfaId", pfaId))
       .take(10_000);
-    const employers = await ctx.db.query("employers").take(10_000);
-    const employerById = new Map(employers.map((e) => [e._id, e]));
+    const employerById = await byIds(
+      ctx,
+      exceptions.flatMap((e) => (e.employerId ? [e.employerId] : [])),
+    );
 
     return exceptions
       .sort((a, b) => b.createdAt - a.createdAt)
