@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -75,7 +76,7 @@ export default function Overview() {
       await syncPfas({});
       toast.success("Demo workspace loaded");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Seeding failed");
+      toast.error(friendlyError(e, "Seeding failed"));
     } finally {
       setSeeding(false);
     }
@@ -89,7 +90,7 @@ export default function Overview() {
       await claimAdmin({});
       toast.success("Platform admin assigned to this account");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not claim platform admin");
+      toast.error(friendlyError(e, "Could not claim platform admin"));
     }
   };
 
@@ -493,7 +494,7 @@ function ResumePipeline({ batchId }: { batchId: Id<"contributionBatches"> }) {
           await pipeline({ batchId });
           toast.success("Pipeline resumed — batch updated");
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Resume failed");
+          toast.error(friendlyError(e, "Resume failed"));
         } finally {
           setRunning(false);
         }

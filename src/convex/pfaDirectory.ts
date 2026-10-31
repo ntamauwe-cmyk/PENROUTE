@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -77,8 +77,8 @@ function norm(s: string): string {
 
 async function requireAdmin(ctx: QueryCtx | MutationCtx) {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.role !== "admin") throw new Error("Admin access required");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.role !== "admin") throw new ConvexError("Admin access required");
   return user;
 }
 
@@ -322,7 +322,7 @@ export const getDirectory = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const isAdmin = user.role === "admin";
     const employer = isAdmin ? null : await getEmployerForUser(ctx, user);
     const scope = isAdmin ? {} : employer ? { employerId: employer._id } : {};
@@ -464,7 +464,7 @@ export const getPfaReports = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const isAdmin = user.role === "admin";
     const employer = isAdmin ? null : await getEmployerForUser(ctx, user);
 
@@ -564,7 +564,7 @@ export const setPfaStatus = mutation({
   handler: async (ctx, { pfaId, active }) => {
     const user = await requireAdmin(ctx);
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("PFA not found");
+    if (!pfa) throw new ConvexError("PFA not found");
 
     const before = pfa.active && pfa.status !== "INACTIVE" ? "ACTIVE" : "INACTIVE";
     const after = active ? "ACTIVE" : "INACTIVE";
@@ -602,7 +602,7 @@ export const updatePfaMetadata = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     const pfa = await ctx.db.get(args.pfaId);
-    if (!pfa) throw new Error("PFA not found");
+    if (!pfa) throw new ConvexError("PFA not found");
 
     const trimOrUndefined = (s: string | undefined): string | undefined => {
       const t = s?.trim();
@@ -611,22 +611,22 @@ export const updatePfaMetadata = mutation({
 
     const website = trimOrUndefined(args.websiteUrl);
     if (website && !/^https?:\/\/[^\s]+$/i.test(website)) {
-      throw new Error("Website must be a valid http(s) URL");
+      throw new ConvexError("Website must be a valid http(s) URL");
     }
     const email = trimOrUndefined(args.supportEmail);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw new Error("Support email is not a valid email address");
+      throw new ConvexError("Support email is not a valid email address");
     }
     const phone = trimOrUndefined(args.supportPhone);
     if (phone && !/^[+0-9()\-\s]{5,20}$/.test(phone)) {
-      throw new Error("Support phone contains invalid characters");
+      throw new ConvexError("Support phone contains invalid characters");
     }
     const shortName = trimOrUndefined(args.shortName);
-    if (shortName && shortName.length > 40) throw new Error("Short name is too long (max 40)");
+    if (shortName && shortName.length > 40) throw new ConvexError("Short name is too long (max 40)");
     const legalName = trimOrUndefined(args.legalName);
-    if (legalName && legalName.length > 200) throw new Error("Legal name is too long (max 200)");
+    if (legalName && legalName.length > 200) throw new ConvexError("Legal name is too long (max 200)");
     const address = trimOrUndefined(args.headquartersAddress);
-    if (address && address.length > 300) throw new Error("Address is too long (max 300)");
+    if (address && address.length > 300) throw new ConvexError("Address is too long (max 300)");
 
     type EditableField =
       | "legalName"
@@ -689,7 +689,7 @@ export const setIntegrationStatus = mutation({
   handler: async (ctx, { pfaId, integrationStatus }) => {
     const user = await requireAdmin(ctx);
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("PFA not found");
+    if (!pfa) throw new ConvexError("PFA not found");
     const before = pfa.integrationStatus ?? "not_integrated";
     if (before === integrationStatus) return { ok: true, unchanged: true };
 

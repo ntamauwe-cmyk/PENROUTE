@@ -29,7 +29,7 @@
  */
 "use node";
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action, internalAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -227,7 +227,7 @@ export const testPfaConnection = action({
   > => {
     const caller = await ctx.runQuery(api.users.currentUser, {});
     if (!caller || caller.role !== "admin") {
-      throw new Error("Admin access required");
+      throw new ConvexError("Admin access required");
     }
     const pfa: { name: string; code: string; endpointConfig?: PfaEndpointConfig } | null =
       await ctx.runQuery(internal.pfaDispatchData.internalPfaById, { pfaId });

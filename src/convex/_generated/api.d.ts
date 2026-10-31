@@ -17,6 +17,7 @@ import type * as compliance from "../compliance.js";
 import type * as contributions from "../contributions.js";
 import type * as crons from "../crons.js";
 import type * as employers from "../employers.js";
+import type * as employeeCheck from "../employeeCheck.js";
 import type * as engine from "../engine.js";
 import type * as environment from "../environment.js";
 import type * as githubPr from "../githubPr.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   contributions: typeof contributions;
   crons: typeof crons;
   employers: typeof employers;
+  employeeCheck: typeof employeeCheck;
   engine: typeof engine;
   environment: typeof environment;
   githubPr: typeof githubPr;

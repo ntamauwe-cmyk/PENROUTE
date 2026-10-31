@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { useNavigate, useParams } from "react-router";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -138,7 +139,7 @@ function PfaDetailBody({ pfaId }: { pfaId: Id<"pfas"> }) {
       toast.success("PFA details saved");
       setEditOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(friendlyError(e, "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -150,7 +151,7 @@ function PfaDetailBody({ pfaId }: { pfaId: Id<"pfas"> }) {
       await setPfaStatus({ pfaId, active: !isActive });
       toast.success(`${pfa.name} ${isActive ? "deactivated" : "activated"}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(friendlyError(e, "Update failed"));
     } finally {
       setBusy(false);
     }
@@ -164,7 +165,7 @@ function PfaDetailBody({ pfaId }: { pfaId: Id<"pfas"> }) {
       });
       toast.success(`Integration status set to ${INTEGRATION_OPTIONS.find((o) => o.value === value)?.label}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(friendlyError(e, "Update failed"));
     }
   };
 

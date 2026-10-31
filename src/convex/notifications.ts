@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalAction, internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -153,7 +153,7 @@ export const markRead = mutation({
   args: { ids: v.array(v.id("notifications")) },
   handler: async (ctx, { ids }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = user.role === "admin" || user.role === "pfa" ? null : await getEmployerForUser(ctx, user);
     const now = Date.now();
     for (const id of ids.slice(0, 100)) {

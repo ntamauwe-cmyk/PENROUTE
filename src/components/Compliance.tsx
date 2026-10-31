@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -91,7 +92,7 @@ export function SalaryPayDaySetting() {
               toast.success("Pay day saved — deadlines updated");
               setValue(null);
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Could not save");
+              toast.error(friendlyError(e, "Could not save"));
             }
           }}
           disabled={!current}

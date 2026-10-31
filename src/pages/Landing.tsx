@@ -402,6 +402,10 @@ export default function Landing() {
             <span className="hidden sm:inline"> · </span>
             Payments processed by Paystack; contributions are posted only when each PFA confirms.
             <br />
+            <a href="/check" className="font-semibold text-[#007A4D] hover:underline">
+              Employees: check your contributions
+            </a>
+            {" · "}
             <a href="/terms" className="font-semibold text-[#007A4D] hover:underline">
               Terms
             </a>

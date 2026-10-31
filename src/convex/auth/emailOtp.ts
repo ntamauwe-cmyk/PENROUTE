@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { Email } from "@convex-dev/auth/providers/Email";
 import axios from "axios";
 import { RandomReader, generateRandomString } from "@oslojs/crypto/random";
@@ -34,19 +35,19 @@ export const emailOtp = Email({
           },
           { headers: { Authorization: `Bearer ${resendKey}` }, timeout: 15_000 },
         );
-        if (res.status >= 300) throw new Error(`HTTP ${res.status}`);
+        if (res.status >= 300) throw new ConvexError(`HTTP ${res.status}`);
         return;
       } catch (error) {
         const status = axios.isAxiosError(error) ? error.response?.status : undefined;
         console.error(`Sign-in email failed${status ? ` (HTTP ${status})` : ""}`);
-        throw new Error("We couldn't send your sign-in code. Please try again shortly.");
+        throw new ConvexError("We couldn't send your sign-in code. Please try again shortly.");
       }
     }
 
     const apiKey = process.env.EMAIL_OTP_API_KEY;
     if (!apiKey) {
       console.error("No email provider configured (set RESEND_API_KEY + NOTIFY_FROM_EMAIL)");
-      throw new Error("Sign-in emails are temporarily unavailable. Please try again later.");
+      throw new ConvexError("Sign-in emails are temporarily unavailable. Please try again later.");
     }
     try {
       await axios.post(
@@ -59,7 +60,7 @@ export const emailOtp = Email({
       // i.e. the relay API key, and would leak it into logs/clients.
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
       console.error(`OTP relay request failed${status ? ` (HTTP ${status})` : ""}`);
-      throw new Error("We couldn't send your sign-in code. Please try again shortly.");
+      throw new ConvexError("We couldn't send your sign-in code. Please try again shortly.");
     }
   },
 });

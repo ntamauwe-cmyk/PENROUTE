@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { getCurrentUser } from "./users";
 import { internal } from "./_generated/api";
@@ -15,8 +15,8 @@ import { notify } from "./notifications";
 
 async function requireAdmin(ctx: Parameters<typeof getCurrentUser>[0]) {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.role !== "admin") throw new Error("Admin access required");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.role !== "admin") throw new ConvexError("Admin access required");
   return user;
 }
 
@@ -164,7 +164,7 @@ export const adminUpdateFee = mutation({
   handler: async (ctx, { perEmployeeFeeKobo }) => {
     const user = await requireAdmin(ctx);
     if (!Number.isFinite(perEmployeeFeeKobo) || perEmployeeFeeKobo < 0) {
-      throw new Error("Invalid fee amount");
+      throw new ConvexError("Invalid fee amount");
     }
     const row = await ctx.db
       .query("systemConfig")
@@ -217,12 +217,12 @@ export const adminSetRailMode = mutation({
   handler: async (ctx, { mode }) => {
     const user = await requireAdmin(ctx);
     if (mode === "sandbox" && !sandboxModeEnabled()) {
-      throw new Error("The sandbox payment rail is disabled on production deployments");
+      throw new ConvexError("The sandbox payment rail is disabled on production deployments");
     }
     if (mode === "live") {
       const key = process.env.PAYSTACK_SECRET_KEY ?? "";
       if (!/^sk_(live|test)_/.test(key) || key.length <= 20) {
-        throw new Error("Set PAYSTACK_SECRET_KEY in the Convex deployment environment before enabling the live rail");
+        throw new ConvexError("Set PAYSTACK_SECRET_KEY in the Convex deployment environment before enabling the live rail");
       }
     }
     const row = await ctx.db
@@ -264,7 +264,7 @@ export const adminSetEmployerStatus = mutation({
   handler: async (ctx, { employerId, status }) => {
     const user = await requireAdmin(ctx);
     const employer = await ctx.db.get(employerId);
-    if (!employer) throw new Error("Employer not found");
+    if (!employer) throw new ConvexError("Employer not found");
     if (status === "active" && employer.kycStatus !== "verified") {
       // First approval: KYB evidence must have been reviewed and accepted.
       const docs = await ctx.db
@@ -272,7 +272,7 @@ export const adminSetEmployerStatus = mutation({
         .withIndex("by_employer", (q) => q.eq("employerId", employerId))
         .take(50);
       if (!docs.some((d) => d.kind === "cac_certificate" && d.status === "accepted")) {
-        throw new Error(
+        throw new ConvexError(
           "Accept the employer's CAC certificate of incorporation (KYB documents) before approving the account",
         );
       }
@@ -314,9 +314,9 @@ export const adminRetryPipeline = mutation({
   handler: async (ctx, { batchId }) => {
     const user = await requireAdmin(ctx);
     const batch = await ctx.db.get(batchId);
-    if (!batch) throw new Error("Batch not found");
+    if (!batch) throw new ConvexError("Batch not found");
     if (batch.status !== "processing") {
-      throw new Error(`Only processing batches can be retried (status: ${batch.status})`);
+      throw new ConvexError(`Only processing batches can be retried (status: ${batch.status})`);
     }
     // Retry through the server-only pipeline; never expose the state machine to clients.
     await ctx.scheduler.runAfter(0, internal.engine.processPipeline, { batchId });
@@ -354,15 +354,15 @@ export const adminSetPfaIntegration = mutation({
   handler: async (ctx, { pfaId, integrationMode, endpoint, apiSecret, secretHeaderName, hmacSecret }) => {
     const user = await requireAdmin(ctx);
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("PFA not found");
+    if (!pfa) throw new ConvexError("PFA not found");
 
     if (integrationMode === "live_api") {
       if (!endpoint || !/^https:\/\/.+/.test(endpoint)) {
-        throw new Error("live_api requires a valid https:// endpoint");
+        throw new ConvexError("live_api requires a valid https:// endpoint");
       }
       if (!apiSecret) {
         const existing = pfa.endpointConfig as { apiSecret?: string } | undefined;
-        if (!existing?.apiSecret) throw new Error("live_api requires an API secret (none stored yet)");
+        if (!existing?.apiSecret) throw new ConvexError("live_api requires an API secret (none stored yet)");
       }
     }
 
@@ -399,7 +399,7 @@ export const adminClearPfaSecrets = mutation({
   handler: async (ctx, { pfaId }) => {
     const user = await requireAdmin(ctx);
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("PFA not found");
+    if (!pfa) throw new ConvexError("PFA not found");
     const current = (pfa.endpointConfig ?? {}) as Record<string, unknown>;
     const next = { ...current };
     delete next.apiSecret;
@@ -451,7 +451,7 @@ export const grantPlatformAdmin = internalMutation({
     const norm = email.trim().toLowerCase();
     const users = await ctx.db.query("users").withIndex("email", (q) => q.eq("email", norm)).take(10);
     const user = users.find((u) => !u.isAnonymous);
-    if (!user) throw new Error(`No signed-up account for ${norm} — ask them to sign in once first`);
+    if (!user) throw new ConvexError(`No signed-up account for ${norm} — ask them to sign in once first`);
     if (user.role === "admin") return { ok: true, unchanged: true };
     await ctx.db.patch(user._id, { role: "admin", pfaId: undefined });
     await audit(ctx, {

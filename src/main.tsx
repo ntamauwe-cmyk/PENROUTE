@@ -31,6 +31,7 @@ const AdminPricing = lazy(() => import("./pages/employer/AdminPricing.tsx"));
 const AdminRevenue = lazy(() => import("./pages/employer/AdminRevenue.tsx"));
 const PfaPortal = lazy(() => import("./pages/pfa/PfaPortal.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const CheckContributions = lazy(() => import("./pages/CheckContributions.tsx"));
 const TermsPage = lazy(() => import("./pages/Legal.tsx").then((m) => ({ default: m.TermsPage })));
 const PrivacyPage = lazy(() => import("./pages/Legal.tsx").then((m) => ({ default: m.PrivacyPage })));
 
@@ -106,6 +107,7 @@ createRoot(document.getElementById("root")!).render(
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<Landing />} />
+              <Route path="/check" element={<CheckContributions />} />
               <Route path="/terms" element={<TermsPage />} />
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route

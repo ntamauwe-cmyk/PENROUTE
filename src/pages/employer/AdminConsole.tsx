@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -54,7 +55,7 @@ export default function AdminConsole() {
       await claimAdmin({});
       toast.success("Platform admin assigned — welcome aboard");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not claim platform admin");
+      toast.error(friendlyError(e, "Could not claim platform admin"));
     } finally {
       setClaiming(false);
     }
@@ -160,7 +161,7 @@ function AdminConsoleBody() {
       await refreshRail();
       toast.success(`Payment rail switched to ${mode.toUpperCase()}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not switch rail");
+      toast.error(friendlyError(e, "Could not switch rail"));
     } finally {
       setBusy(false);
     }
@@ -190,7 +191,7 @@ function AdminConsoleBody() {
       );
       setPfaOperatorEmail("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not grant access");
+      toast.error(friendlyError(e, "Could not grant access"));
     } finally {
       setGrantBusy(false);
     }
@@ -209,7 +210,7 @@ function AdminConsoleBody() {
         `Fee updated to ₦${(n / 100).toFixed(0)} per employee — applied to every active pricing tier`,
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(friendlyError(e, "Update failed"));
     } finally {
       setBusy(false);
     }
@@ -501,7 +502,7 @@ function AdminConsoleBody() {
                                   toast.success(`Invitation revoked for ${row.email}`);
                                 }
                               } catch (err) {
-                                toast.error(err instanceof Error ? err.message : "Update failed");
+                                toast.error(friendlyError(err, "Update failed"));
                               }
                             }}
                           >
@@ -608,7 +609,7 @@ function AdminConsoleBody() {
                               `${e.name} ${e.status === "active" ? "suspended" : e.status === "pending" || e.status === "under_review" ? "approved" : "reactivated"}`,
                             );
                           } catch (err) {
-                            toast.error(err instanceof Error ? err.message : "Update failed");
+                            toast.error(friendlyError(err, "Update failed"));
                           }
                         }}
                       >
@@ -751,7 +752,7 @@ function PfaIntegrationRow({
       setOpen(false);
       toast.success(`${pfa.name} integration updated`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(friendlyError(e, "Update failed"));
     } finally {
       setBusy(false);
     }
@@ -768,7 +769,7 @@ function PfaIntegrationRow({
           : (res.reason ?? `Endpoint test failed${res.httpStatus ? ` (HTTP ${res.httpStatus})` : ""}`),
       );
     } catch (e) {
-      setTestResult(e instanceof Error ? e.message : "Connection test failed");
+      setTestResult(friendlyError(e, "Connection test failed"));
     } finally {
       setTesting(false);
     }
@@ -879,7 +880,7 @@ function PfaIntegrationRow({
                     await onClear();
                     toast.success("Stored secrets cleared");
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Failed");
+                    toast.error(friendlyError(e, "Failed"));
                   }
                 }}
               >

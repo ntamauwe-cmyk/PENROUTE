@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 // ============================================================================
 // DEPLOYMENT ENVIRONMENT FLAGS — fail closed.
 // ----------------------------------------------------------------------------
@@ -18,7 +19,7 @@ export function sandboxModeEnabled(): boolean {
 
 export function requireSandboxMode(what: string): void {
   if (!sandboxModeEnabled()) {
-    throw new Error(
+    throw new ConvexError(
       `${what} is only available on sandbox deployments (PENROUTE_SANDBOX_MODE=enabled). ` +
         "This deployment is configured for production.",
     );

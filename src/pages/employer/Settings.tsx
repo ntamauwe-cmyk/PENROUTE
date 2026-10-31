@@ -1,4 +1,5 @@
 import { api } from "@/convex/_generated/api";
+import { friendlyError } from "@/lib/errors";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -220,7 +221,7 @@ function GitHubSyncCard() {
       const res = await verify({ owner, repo });
       setVerifyResult(res);
     } catch (e) {
-      setVerifyResult({ ok: false, reason: e instanceof Error ? e.message : "Verification failed" });
+      setVerifyResult({ ok: false, reason: friendlyError(e, "Verification failed") });
     } finally {
       setVerifying(false);
     }
@@ -253,7 +254,7 @@ function GitHubSyncCard() {
         toast.error(res.error);
       }
     } catch (e) {
-      setPushResult({ ok: false, error: e instanceof Error ? e.message : "Push failed" });
+      setPushResult({ ok: false, error: friendlyError(e, "Push failed") });
       toast.error("Push failed");
     } finally {
       setStaging(false);
@@ -397,7 +398,7 @@ function PayrollIntegrationCard({
       setShowKey(true);
       toast.success("API key generated — copy it now, it won't be shown again");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not generate key");
+      toast.error(friendlyError(e, "Could not generate key"));
     } finally {
       setBusy(null);
     }
@@ -411,7 +412,7 @@ function PayrollIntegrationCard({
       setGeneratedKey(null);
       toast.success("API key revoked");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not revoke key");
+      toast.error(friendlyError(e, "Could not revoke key"));
     } finally {
       setBusy(null);
     }

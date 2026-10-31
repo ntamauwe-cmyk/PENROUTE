@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,7 @@ export default function Onboarding() {
       });
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Registration failed");
+      toast.error(friendlyError(err, "Registration failed"));
     } finally {
       setSaving(false);
     }
@@ -69,7 +70,7 @@ export default function Onboarding() {
       await claim({});
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not load demo data");
+      toast.error(friendlyError(err, "Could not load demo data"));
     } finally {
       setSaving(false);
     }

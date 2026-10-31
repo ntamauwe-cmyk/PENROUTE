@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -32,8 +32,8 @@ export const syncPfaDirectory = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (user.role !== "admin") throw new Error("Admin access required");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (user.role !== "admin") throw new ConvexError("Admin access required");
 
     const result = await applyPfaSeed(ctx, user.email ?? "admin");
     return { inserted: result.inserted, updated: result.updated, total: result.total };
@@ -116,7 +116,7 @@ export const getBatchDetail = query({
     const batch = await ctx.db.get(batchId);
     if (!batch) return null;
     if (batch.employerId !== employer._id) {
-      throw new Error("Not authorized to view this batch");
+      throw new ConvexError("Not authorized to view this batch");
     }
 
     const records = await ctx.db
@@ -192,12 +192,12 @@ export const getPfaAllocations = query({
   args: { pfaId: v.id("pfas") },
   handler: async (ctx, { pfaId }) => {
     const caller = await getCurrentUser(ctx);
-    if (!caller) throw new Error("Not authenticated");
+    if (!caller) throw new ConvexError("Not authenticated");
     if (
       caller.role !== "admin" &&
       (caller.role !== "pfa" || caller.pfaId !== pfaId)
     ) {
-      throw new Error("Not authorized to view this PFA's allocations");
+      throw new ConvexError("Not authorized to view this PFA's allocations");
     }
     const pfa = await ctx.db.get(pfaId);
     if (!pfa) return null;
@@ -239,7 +239,7 @@ export const getAdminOverview = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (user?.role !== "admin") throw new Error("Admin access required");
+    if (user?.role !== "admin") throw new ConvexError("Admin access required");
 
     const [employers, batches, exceptions, ledger, logs] = await Promise.all([
       ctx.db.query("employers").take(10_000),
@@ -290,7 +290,7 @@ export const getBatchAudit = query({
     const batch = await ctx.db.get(batchId);
     if (!batch) return [];
     if (batch.employerId !== employer._id) {
-      throw new Error("Not authorized to view this batch");
+      throw new ConvexError("Not authorized to view this batch");
     }
     return (
       await ctx.db
@@ -402,8 +402,8 @@ export const claimDemoEmployer = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (user.role !== "admin") throw new Error("Demo employer claiming is restricted to platform admins");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (user.role !== "admin") throw new ConvexError("Demo employer claiming is restricted to platform admins");
     requireSandboxMode("The demo workspace");
     // Only ever the seeded demo employer — never "the first active employer",
     // which on a live deployment is a real customer's workspace.
@@ -411,7 +411,7 @@ export const claimDemoEmployer = mutation({
       .query("employers")
       .withIndex("by_rc", (q) => q.eq("rcNumber", DEMO_EMPLOYER_RC))
       .first();
-    if (!active) throw new Error("No demo employer seeded yet");
+    if (!active) throw new ConvexError("No demo employer seeded yet");
     // Ownership must MOVE with the claim: workspace resolution
     // (getEmployerForUser) only grants access to the employer's owner, so
     // linking the claimer without transferring ownership left them with a
@@ -456,20 +456,20 @@ export const claimPlatformAdmin = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (user.isAnonymous) throw new Error("Sign in with your email to claim platform admin");
-    if (!user.email) throw new Error("A signed-in email account is required to claim platform admin");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (user.isAnonymous) throw new ConvexError("Sign in with your email to claim platform admin");
+    if (!user.email) throw new ConvexError("A signed-in email account is required to claim platform admin");
     if (user.role === "admin") return { ok: true, unchanged: true };
     // Only operator emails named in PENROUTE_BOOTSTRAP_ADMIN_EMAILS may claim.
     // Without it, the first stranger to sign up on a fresh deployment would
     // become super-admin. (Operators can also grant admin from the CLI:
     // `npx convex run admin:grantPlatformAdmin '{"email":"..."}'`.)
     if (!bootstrapAdminEmails().has(user.email.trim().toLowerCase())) {
-      throw new Error("This account is not authorised to claim platform admin");
+      throw new ConvexError("This account is not authorised to claim platform admin");
     }
     const users = await ctx.db.query("users").take(10_000);
     if (users.some((u) => u.role === "admin")) {
-      throw new Error("Platform admin is already configured");
+      throw new ConvexError("Platform admin is already configured");
     }
     await ctx.db.patch(user._id, { role: "admin" });
     await ctx.db.insert("auditLogs", {
@@ -503,25 +503,25 @@ export const registerEmployer = mutation({
   },
   handler: async (ctx, { acceptTerms, ...args }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (!acceptTerms) throw new Error("Accept the Terms of Service and Privacy Notice to register");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (!acceptTerms) throw new ConvexError("Accept the Terms of Service and Privacy Notice to register");
     if (user.isAnonymous && !sandboxModeEnabled()) {
-      throw new Error("Sign in with your work email to register a company");
+      throw new ConvexError("Sign in with your work email to register a company");
     }
-    if (user.role === "pfa") throw new Error("PFA portal accounts cannot register an employer workspace");
-    if (!args.name.trim()) throw new Error("Company name is required");
-    if (!args.rcNumber.trim()) throw new Error("RC number is required");
-    if (!args.tin.trim()) throw new Error("TIN is required");
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(args.contactEmail.trim())) throw new Error("A valid contact email is required");
+    if (user.role === "pfa") throw new ConvexError("PFA portal accounts cannot register an employer workspace");
+    if (!args.name.trim()) throw new ConvexError("Company name is required");
+    if (!args.rcNumber.trim()) throw new ConvexError("RC number is required");
+    if (!args.tin.trim()) throw new ConvexError("TIN is required");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(args.contactEmail.trim())) throw new ConvexError("A valid contact email is required");
     for (const [field, value] of Object.entries(args)) {
-      if (value.length > 300) throw new Error(`${field} is too long`);
+      if (value.length > 300) throw new ConvexError(`${field} is too long`);
     }
 
     const dupRc = await ctx.db
       .query("employers")
       .withIndex("by_rc", (q) => q.eq("rcNumber", args.rcNumber.trim()))
       .first();
-    if (dupRc) throw new Error("An employer with this RC number already exists");
+    if (dupRc) throw new ConvexError("An employer with this RC number already exists");
 
     const now = Date.now();
     const employerId = await ctx.db.insert("employers", {
@@ -577,8 +577,8 @@ export const seedDemoData = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (user.role !== "admin") throw new Error("Demo data seeding is restricted to platform admins");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (user.role !== "admin") throw new ConvexError("Demo data seeding is restricted to platform admins");
     requireSandboxMode("Demo data seeding");
     const existing = await ctx.db.query("employers").first();
     if (existing) return { seeded: false, reason: "already_seeded" };
@@ -655,7 +655,7 @@ export const updateFeeConfig = mutation({
   handler: async (ctx, { perEmployeeFeeKobo }) => {
     const user = await getCurrentUser(ctx);
     if (user?.role !== "admin") {
-      throw new Error("Only platform admins can change pricing");
+      throw new ConvexError("Only platform admins can change pricing");
     }
     const row = await ctx.db
       .query("systemConfig")
@@ -705,14 +705,14 @@ export const resolveException = mutation({
   },
   handler: async (ctx, { exceptionId, notes }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const exc = await ctx.db.get(exceptionId);
-    if (!exc) throw new Error("Exception not found");
+    if (!exc) throw new ConvexError("Exception not found");
     // Employer users may only resolve their own exceptions; admins may resolve any.
     if (user.role !== "admin") {
       const mine = await getEmployerForUser(ctx, user);
       if (!mine || !exc.employerId || mine._id !== exc.employerId) {
-        throw new Error("Not authorized to resolve this exception");
+        throw new ConvexError("Not authorized to resolve this exception");
       }
     }
     await ctx.db.patch(exceptionId, {
@@ -740,7 +740,7 @@ export const resolveException = mutation({
 function emolumentKobo(naira: number | undefined): number | undefined {
   if (naira === undefined) return undefined;
   if (!Number.isFinite(naira) || naira < 0 || naira > 1_000_000_000) {
-    throw new Error("Monthly emoluments must be between ₦0 and ₦1,000,000,000");
+    throw new ConvexError("Monthly emoluments must be between ₦0 and ₦1,000,000,000");
   }
   return naira === 0 ? undefined : Math.round(naira * 100);
 }
@@ -755,20 +755,20 @@ export const addEmployee = mutation({
   },
   handler: async (ctx, { fullName, employeeCode, pensionPin, pfaId, monthlyEmolument }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
-    if (!employer) throw new Error("No employer profile — seed or onboard first");
+    if (!employer) throw new ConvexError("No employer profile — seed or onboard first");
 
     const cleanPin = pensionPin.trim().toUpperCase().replace(/\s/g, "");
     if (!/^[A-Z0-9]{6,20}$/.test(cleanPin.replace(/-/g, ""))) {
-      throw new Error("Invalid pension PIN format (6–20 letters/digits)");
+      throw new ConvexError("Invalid pension PIN format (6–20 letters/digits)");
     }
-    if (!fullName.trim()) throw new Error("Employee name is required");
-    if (!employeeCode.trim()) throw new Error("Employee ID is required");
+    if (!fullName.trim()) throw new ConvexError("Employee name is required");
+    if (!employeeCode.trim()) throw new ConvexError("Employee ID is required");
 
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("Unknown PFA");
-    if (!isSelectable(pfa)) throw new Error(`${pfa.name} is inactive and cannot be selected for new pension records`);
+    if (!pfa) throw new ConvexError("Unknown PFA");
+    if (!isSelectable(pfa)) throw new ConvexError(`${pfa.name} is inactive and cannot be selected for new pension records`);
 
     const dup = await ctx.db
       .query("employees")
@@ -776,7 +776,7 @@ export const addEmployee = mutation({
         q.eq("employerId", employer._id).eq("pensionPin", cleanPin),
       )
       .first();
-    if (dup) throw new Error(`Pension PIN ${cleanPin} already exists for this employer`);
+    if (dup) throw new ConvexError(`Pension PIN ${cleanPin} already exists for this employer`);
 
     const now = Date.now();
     const employeeId = await ctx.db.insert("employees", {
@@ -813,29 +813,29 @@ export const updateEmployee = mutation({
   },
   handler: async (ctx, { employeeId, fullName, employeeCode, pensionPin, pfaId, monthlyEmolument }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
-    if (!employer) throw new Error("No employer profile");
+    if (!employer) throw new ConvexError("No employer profile");
 
     const employee = await ctx.db.get(employeeId);
     if (!employee || employee.employerId !== employer._id) {
-      throw new Error("Not authorized to modify this employee");
+      throw new ConvexError("Not authorized to modify this employee");
     }
 
     const cleanPin = pensionPin.trim().toUpperCase().replace(/\s/g, "");
     if (!/^[A-Z0-9]{6,20}$/.test(cleanPin.replace(/-/g, ""))) {
-      throw new Error("Invalid pension PIN format (6–20 letters/digits)");
+      throw new ConvexError("Invalid pension PIN format (6–20 letters/digits)");
     }
-    if (!fullName.trim()) throw new Error("Employee name is required");
-    if (!employeeCode.trim()) throw new Error("Employee ID is required");
+    if (!fullName.trim()) throw new ConvexError("Employee name is required");
+    if (!employeeCode.trim()) throw new ConvexError("Employee ID is required");
 
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("Unknown PFA");
+    if (!pfa) throw new ConvexError("Unknown PFA");
     // Inactive PFAs cannot be chosen for new/changed assignments; keeping an
     // employee on their existing (possibly deactivated) PFA remains allowed so
     // historical records keep resolving.
     if (pfaId !== employee.pfaId && !isSelectable(pfa)) {
-      throw new Error(`${pfa.name} is inactive and cannot be selected for new pension records`);
+      throw new ConvexError(`${pfa.name} is inactive and cannot be selected for new pension records`);
     }
 
     // Duplicate-PIN check excludes the employee being edited.
@@ -846,7 +846,7 @@ export const updateEmployee = mutation({
           q.eq("employerId", employer._id).eq("pensionPin", cleanPin),
         )
         .first();
-      if (dup) throw new Error(`Pension PIN ${cleanPin} already exists for this employer`);
+      if (dup) throw new ConvexError(`Pension PIN ${cleanPin} already exists for this employer`);
     }
 
     await ctx.db.patch(employeeId, {
@@ -872,12 +872,12 @@ export const toggleEmployeeActive = mutation({
   args: { employeeId: v.id("employees") },
   handler: async (ctx, { employeeId }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
-    if (!employer) throw new Error("No employer profile");
+    if (!employer) throw new ConvexError("No employer profile");
     const employee = await ctx.db.get(employeeId);
     if (!employee || employee.employerId !== employer._id) {
-      throw new Error("Not authorized to modify this employee");
+      throw new ConvexError("Not authorized to modify this employee");
     }
     await ctx.db.patch(employeeId, { active: !employee.active });
     await audit(ctx, {

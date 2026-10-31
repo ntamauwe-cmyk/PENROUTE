@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -54,7 +55,7 @@ export function LivePaymentPanel({
         toast.error(res.reason ?? "Could not start the payment");
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Payment initialization failed");
+      toast.error(friendlyError(e, "Payment initialization failed"));
     } finally {
       setStarting(false);
     }
@@ -78,7 +79,7 @@ export function LivePaymentPanel({
         toast.info("Payment not completed yet — finish in the Paystack window and try again.");
       }
     } catch (e) {
-      if (!silent) toast.error(e instanceof Error ? e.message : "Verification failed");
+      if (!silent) toast.error(friendlyError(e, "Verification failed"));
     } finally {
       setChecking(false);
     }

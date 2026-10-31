@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -127,7 +128,7 @@ export function ContributionWizard({ onDone }: Props) {
       toast.success(`Schedule loaded — ${rows.length} employees from CSV`);
     } catch (e) {
       setUploadedRows(null);
-      setUploadError(e instanceof Error ? e.message : "Could not read the file");
+      setUploadError(friendlyError(e, "Could not read the file"));
     }
   };
 
@@ -302,7 +303,7 @@ export function ContributionWizard({ onDone }: Props) {
       setFinishedBatchId(bId);
       onDone(bId);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Payment failed";
+      const msg = friendlyError(e, "Payment failed");
       toast.error(msg);
       if (msg.includes("not payable")) {
         setStep("period");

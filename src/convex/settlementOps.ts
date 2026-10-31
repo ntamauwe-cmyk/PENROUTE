@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getCurrentUser } from "./users";
@@ -26,37 +26,37 @@ export const confirmSettlement = mutation({
   },
   handler: async (ctx, { settlementId, reference, acceptedCount, note }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const settlement = await ctx.db.get(settlementId);
-    if (!settlement) throw new Error("Settlement not found");
+    if (!settlement) throw new ConvexError("Settlement not found");
 
     const isAdmin = user.role === "admin";
     const isOwnPfa = user.role === "pfa" && user.pfaId === settlement.pfaId;
-    if (!isAdmin && !isOwnPfa) throw new Error("Not authorized to confirm this settlement");
+    if (!isAdmin && !isOwnPfa) throw new ConvexError("Not authorized to confirm this settlement");
 
     const pfa = await ctx.db.get(settlement.pfaId);
     if (pfa?.integrationMode === "live_api") {
-      throw new Error("This PFA is integrated via live API — confirmations arrive automatically from its endpoint");
+      throw new ConvexError("This PFA is integrated via live API — confirmations arrive automatically from its endpoint");
     }
-    if (settlement.status === "settled") throw new Error("Settlement already confirmed");
+    if (settlement.status === "settled") throw new ConvexError("Settlement already confirmed");
     if (settlement.status !== "pending" && settlement.status !== "processing") {
-      throw new Error(`Settlement cannot be confirmed from status "${settlement.status}"`);
+      throw new ConvexError(`Settlement cannot be confirmed from status "${settlement.status}"`);
     }
     const ref = reference.trim();
     if (ref.length < 3 || ref.length > 120) {
-      throw new Error("Enter the PFA posting or remittance reference (3–120 characters)");
+      throw new ConvexError("Enter the PFA posting or remittance reference (3–120 characters)");
     }
     if (acceptedCount !== undefined && (!Number.isInteger(acceptedCount) || acceptedCount < 0 || acceptedCount > settlement.employeeCount)) {
-      throw new Error("Accepted count must be between 0 and the settlement's employee count");
+      throw new ConvexError("Accepted count must be between 0 and the settlement's employee count");
     }
     if (acceptedCount !== undefined && acceptedCount !== settlement.employeeCount) {
-      throw new Error(
+      throw new ConvexError(
         "Partial postings must be raised as an exception, not confirmed — confirm only when every employee in the settlement was posted",
       );
     }
 
     const batch = await ctx.db.get(settlement.batchId);
-    if (!batch) throw new Error("Batch not found");
+    if (!batch) throw new ConvexError("Batch not found");
     const now = Date.now();
     const actor = user.email ?? (isAdmin ? "admin" : "pfa-operator");
 
@@ -106,9 +106,9 @@ export const listAwaitingConfirmation = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     if (user.role !== "admin" && !(user.role === "pfa" && user.pfaId)) {
-      throw new Error("Not authorized");
+      throw new ConvexError("Not authorized");
     }
     const rows =
       user.role === "pfa"

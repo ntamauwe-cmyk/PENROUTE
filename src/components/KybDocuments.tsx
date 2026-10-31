@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -57,7 +58,7 @@ export function KybDocumentsUpload() {
       await attach({ storageId, kind, fileName: file.name });
       toast.success("Document uploaded for review");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(friendlyError(e, "Upload failed"));
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -109,7 +110,7 @@ export function KybDocumentsUpload() {
           )}
         </Button>
       </div>
-      <DocumentList docs={docs} onRemove={(id) => void remove({ documentId: id }).catch((e: Error) => toast.error(e.message))} />
+      <DocumentList docs={docs} onRemove={(id) => void remove({ documentId: id }).catch((e: unknown) => toast.error(friendlyError(e)))} />
     </section>
   );
 }
@@ -193,7 +194,7 @@ export function KybDocumentsReview({ employerId }: { employerId: Id<"employers">
           await review({ documentId: id, decision, note });
           toast.success(`Document ${decision}`);
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Review failed");
+          toast.error(friendlyError(e, "Review failed"));
         }
       }}
     />

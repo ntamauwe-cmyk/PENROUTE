@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ export default function Reconciliation() {
       setResolving(null);
       setNotes("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not resolve exception");
+      toast.error(friendlyError(e, "Could not resolve exception"));
     } finally {
       setSaving(false);
     }

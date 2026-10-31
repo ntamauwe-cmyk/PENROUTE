@@ -8,7 +8,7 @@
  * administrators can change them.
  * ============================================================================
  */
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -23,8 +23,8 @@ import {
 
 async function requireAdmin(ctx: Parameters<typeof getCurrentUser>[0]) {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.role !== "admin") throw new Error("Admin access required");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.role !== "admin") throw new ConvexError("Admin access required");
   return user;
 }
 
@@ -75,7 +75,7 @@ export async function loadEffectiveTiers(ctx: QueryCtx, at: number = Date.now())
     (r) => r.active && r.effectiveFrom <= at && (r.effectiveTo === undefined || r.effectiveTo > at),
   );
   if (effective.length === 0) {
-    throw new Error("No active pricing tiers are configured — pricing cannot be quoted");
+    throw new ConvexError("No active pricing tiers are configured — pricing cannot be quoted");
   }
   return effective
     .map((r) => ({
@@ -151,7 +151,7 @@ export async function applyFlatFeeToActiveTiers(
   actor: string,
 ): Promise<{ updated: number }> {
   if (!Number.isFinite(feePerPostingKobo) || feePerPostingKobo < 0) {
-    throw new Error("Invalid fee amount");
+    throw new ConvexError("Invalid fee amount");
   }
   await ensurePricingSeeded(ctx);
   const now = Date.now();
@@ -222,8 +222,8 @@ export const getQuote = query({
   args: { postings: v.number() },
   handler: async (ctx, { postings }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (!Number.isFinite(postings) || postings < 0) throw new Error("Invalid posting volume");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (!Number.isFinite(postings) || postings < 0) throw new ConvexError("Invalid posting volume");
     const quote = await quoteForPostings(ctx, Math.floor(postings));
     return {
       postings: quote.postingCount,
@@ -324,15 +324,15 @@ export const createTier = mutation({
     const user = await requireAdmin(ctx);
     await ensurePricingSeeded(ctx);
     const label = args.label.trim();
-    if (!label) throw new Error("Tier label is required");
+    if (!label) throw new ConvexError("Tier label is required");
     if (!Number.isFinite(args.minEmployees) || args.minEmployees < 1) {
-      throw new Error("Minimum employees must be at least 1");
+      throw new ConvexError("Minimum employees must be at least 1");
     }
     if (args.maxEmployees !== undefined && args.maxEmployees < args.minEmployees) {
-      throw new Error("Maximum employees must be >= minimum");
+      throw new ConvexError("Maximum employees must be >= minimum");
     }
     if (!Number.isFinite(args.feePerPostingKobo) || args.feePerPostingKobo < 0) {
-      throw new Error("Fee per posting must be a non-negative number");
+      throw new ConvexError("Fee per posting must be a non-negative number");
     }
     const candidate = {
       min: args.minEmployees,
@@ -341,7 +341,7 @@ export const createTier = mutation({
     const active = (await ctx.db.query("pricingTiers").collect()).filter((t) => t.active);
     for (const t of active) {
       if (rangesOverlap(candidate, { min: t.minEmployees, max: t.maxEmployees ?? null })) {
-        throw new Error(`Range overlaps active tier "${t.label}"`);
+        throw new ConvexError(`Range overlaps active tier "${t.label}"`);
       }
     }
     const now = Date.now();
@@ -384,21 +384,21 @@ export const updateTier = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     const old = await ctx.db.get(args.tierId);
-    if (!old) throw new Error("Tier not found");
+    if (!old) throw new ConvexError("Tier not found");
 
     const label = args.label !== undefined ? args.label.trim() : old.label;
     const minEmployees = args.minEmployees ?? old.minEmployees;
     const maxEmployees =
       args.maxEmployees !== undefined ? (args.maxEmployees ?? undefined) : old.maxEmployees;
     const fee = args.feePerPostingKobo ?? old.feePerPostingKobo;
-    if (!label) throw new Error("Tier label is required");
+    if (!label) throw new ConvexError("Tier label is required");
     if (!Number.isFinite(minEmployees) || minEmployees < 1) {
-      throw new Error("Minimum employees must be at least 1");
+      throw new ConvexError("Minimum employees must be at least 1");
     }
     if (maxEmployees !== undefined && maxEmployees < minEmployees) {
-      throw new Error("Maximum employees must be >= minimum");
+      throw new ConvexError("Maximum employees must be >= minimum");
     }
-    if (!Number.isFinite(fee) || fee < 0) throw new Error("Fee per posting must be non-negative");
+    if (!Number.isFinite(fee) || fee < 0) throw new ConvexError("Fee per posting must be non-negative");
 
     const changed =
       label !== old.label ||
@@ -418,7 +418,7 @@ export const updateTier = mutation({
         min: t.minEmployees,
         max: t.maxEmployees ?? null,
       })) {
-        throw new Error(`Range overlaps active tier "${t.label}"`);
+        throw new ConvexError(`Range overlaps active tier "${t.label}"`);
       }
     }
 
@@ -459,7 +459,7 @@ export const setTierActive = mutation({
   handler: async (ctx, { tierId, active }) => {
     const user = await requireAdmin(ctx);
     const tier = await ctx.db.get(tierId);
-    if (!tier) throw new Error("Tier not found");
+    if (!tier) throw new ConvexError("Tier not found");
     if (tier.active === active) return { ok: true, unchanged: true };
     if (!active) {
       const others = (await ctx.db.query("pricingTiers").collect()).filter(
@@ -470,7 +470,7 @@ export const setTierActive = mutation({
           (t.effectiveTo === undefined || t.effectiveTo > Date.now()),
       );
       if (others.length === 0) {
-        throw new Error("At least one active pricing tier must remain");
+        throw new ConvexError("At least one active pricing tier must remain");
       }
     }
     const now = Date.now();
@@ -502,12 +502,12 @@ export const createPlan = mutation({
     const user = await requireAdmin(ctx);
     await ensurePricingSeeded(ctx);
     const code = args.code.trim().toLowerCase();
-    if (!code || !args.name.trim()) throw new Error("Plan code and name are required");
+    if (!code || !args.name.trim()) throw new ConvexError("Plan code and name are required");
     if (!Number.isFinite(args.monthlyPriceKobo) || args.monthlyPriceKobo < 0) {
-      throw new Error("Monthly price must be a non-negative number");
+      throw new ConvexError("Monthly price must be a non-negative number");
     }
     const existing = (await ctx.db.query("subscriptionPlans").collect()).find((p) => p.code === code);
-    if (existing) throw new Error(`A plan with code "${code}" already exists`);
+    if (existing) throw new ConvexError(`A plan with code "${code}" already exists`);
     const now = Date.now();
     const id = await ctx.db.insert("subscriptionPlans", {
       code,
@@ -542,13 +542,13 @@ export const updatePlan = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     const plan = await ctx.db.get(args.planId);
-    if (!plan) throw new Error("Plan not found");
+    if (!plan) throw new ConvexError("Plan not found");
     const name = args.name !== undefined ? args.name.trim() : plan.name;
     const price = args.monthlyPriceKobo ?? plan.monthlyPriceKobo;
     const isFrom = args.priceIsFrom ?? plan.priceIsFrom;
     const desc = args.description !== undefined ? args.description.trim() : plan.description;
-    if (!name) throw new Error("Plan name is required");
-    if (!Number.isFinite(price) || price < 0) throw new Error("Monthly price must be non-negative");
+    if (!name) throw new ConvexError("Plan name is required");
+    if (!Number.isFinite(price) || price < 0) throw new ConvexError("Monthly price must be non-negative");
     const now = Date.now();
     await ctx.db.patch(args.planId, {
       name,
@@ -577,7 +577,7 @@ export const setPlanActive = mutation({
   handler: async (ctx, { planId: pid, active }) => {
     const user = await requireAdmin(ctx);
     const plan = await ctx.db.get(pid);
-    if (!plan) throw new Error("Plan not found");
+    if (!plan) throw new ConvexError("Plan not found");
     if (plan.active === active) return { ok: true, unchanged: true };
     await ctx.db.patch(pid, { active, updatedAt: Date.now() });
     await audit(ctx, {
@@ -600,11 +600,11 @@ export const assignSubscription = mutation({
   handler: async (ctx, { employerId, planCode }) => {
     const user = await requireAdmin(ctx);
     const employer = await ctx.db.get(employerId);
-    if (!employer) throw new Error("Employer not found");
+    if (!employer) throw new ConvexError("Employer not found");
     const plan = (await ctx.db.query("subscriptionPlans").collect()).find(
       (p) => p.code === planCode && p.active,
     );
-    if (!plan) throw new Error("Active plan not found");
+    if (!plan) throw new ConvexError("Active plan not found");
     const now = Date.now();
     const subs = await ctx.db
       .query("employerSubscriptions")

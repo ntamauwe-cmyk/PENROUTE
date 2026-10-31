@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -21,17 +21,17 @@ import { integrationStatusLabel, isSelectable } from "./pfaDirectory";
 
 async function requirePfaUser(ctx: QueryCtx): Promise<Doc<"users">> {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
+  if (!user) throw new ConvexError("Not authenticated");
   if (user.role !== "pfa" || !user.pfaId) {
-    throw new Error("PFA portal access required");
+    throw new ConvexError("PFA portal access required");
   }
   return user;
 }
 
 async function requireAdmin(ctx: QueryCtx | MutationCtx) {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.role !== "admin") throw new Error("Admin access required");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.role !== "admin") throw new ConvexError("Admin access required");
   return user;
 }
 
@@ -161,7 +161,7 @@ export const getOverview = query({
       ctx.db.query("employees").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).take(5_000),
       ctx.db.query("exceptions").withIndex("by_pfa", (q) => q.eq("pfaId", pfaId)).order("desc").take(1_000),
     ]);
-    if (!pfa) throw new Error("PFA record not found");
+    if (!pfa) throw new ConvexError("PFA record not found");
 
     const recentForMaps = [...settlements].sort((a, b) => b.instructedAt - a.instructedAt).slice(0, 50);
     const { batchById, employerById } = await maps(ctx, recentForMaps);
@@ -490,17 +490,17 @@ export const adminProvisionAccess = mutation({
   handler: async (ctx, { email, pfaId }) => {
     const admin = await requireAdmin(ctx);
     const normalized = normEmail(email);
-    if (!validEmail(normalized)) throw new Error("Enter a valid email address");
+    if (!validEmail(normalized)) throw new ConvexError("Enter a valid email address");
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("PFA not found");
-    if (!isSelectable(pfa)) throw new Error("Cannot grant access to an inactive PFA");
+    if (!pfa) throw new ConvexError("PFA not found");
+    if (!isSelectable(pfa)) throw new ConvexError("Cannot grant access to an inactive PFA");
 
     const users = await ctx.db.query("users").take(10_000);
     const existing = users.find((u) => u.email && normEmail(u.email) === normalized);
 
     if (existing) {
       if (existing.role === "admin") {
-        throw new Error("Refusing to change an administrator account");
+        throw new ConvexError("Refusing to change an administrator account");
       }
       if (existing.role === "pfa" && existing.pfaId === pfaId) {
         return { provisioned: "unchanged" as const };
@@ -573,7 +573,7 @@ export const adminRevokeGrant = mutation({
   handler: async (ctx, { grantId }) => {
     const admin = await requireAdmin(ctx);
     const grant = await ctx.db.get(grantId);
-    if (!grant) throw new Error("Grant not found");
+    if (!grant) throw new ConvexError("Grant not found");
     if (grant.status === "revoked") return { ok: true, unchanged: true };
     await ctx.db.patch(grantId, { status: "revoked", revokedAt: Date.now() });
     await audit(ctx, {
@@ -596,8 +596,8 @@ export const adminUnlinkPfaUser = mutation({
   handler: async (ctx, { userId }) => {
     const admin = await requireAdmin(ctx);
     const target = await ctx.db.get(userId);
-    if (!target) throw new Error("User not found");
-    if (target.role === "admin") throw new Error("Refusing to change an administrator account");
+    if (!target) throw new ConvexError("User not found");
+    if (target.role === "admin") throw new ConvexError("Refusing to change an administrator account");
     if (target.role !== "pfa") return { ok: true, unchanged: true };
 
     await ctx.db.patch(userId, { role: "user", pfaId: undefined });

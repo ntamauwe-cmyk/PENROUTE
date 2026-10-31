@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -31,7 +32,7 @@ export function SettlementConfirmations({ scope }: { scope: "admin" | "pfa" }) {
       toast.success("Settlement confirmed — reconciliation will update automatically");
       setRefs((r) => ({ ...r, [id]: "" }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not confirm settlement");
+      toast.error(friendlyError(e, "Could not confirm settlement"));
     } finally {
       setBusy(null);
     }

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -198,10 +198,10 @@ export const prepareBatch = mutation({
   },
   handler: async (ctx, { year, month, records }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForEngine(ctx, user);
-    if (!employer) throw new Error("No employer profile. Complete onboarding first.");
-    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new Error("Employer account must be approved before submitting contributions.");
+    if (!employer) throw new ConvexError("No employer profile. Complete onboarding first.");
+    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new ConvexError("Employer account must be approved before submitting contributions.");
     return createBatchCore(ctx, {
       employer,
       actor: user.email ?? "unknown",
@@ -303,12 +303,12 @@ async function createBatchCore(
 ) {
   const { year, month, records } = opts;
   const employer = opts.employer;
-  if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error("Invalid contribution month");
-  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error("Invalid contribution year");
-  if (records.length === 0) throw new Error("Cannot submit an empty schedule");
+  if (!Number.isInteger(month) || month < 1 || month > 12) throw new ConvexError("Invalid contribution month");
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new ConvexError("Invalid contribution year");
+  if (records.length === 0) throw new ConvexError("Cannot submit an empty schedule");
   // Request-size limit for BOTH doors (browser wizard + payroll API).
   if (records.length > 10_000) {
-    throw new Error("Schedule too large — maximum 10,000 records per submission");
+    throw new ConvexError("Schedule too large — maximum 10,000 records per submission");
   }
 
     // ---- IDEMPOTENCY: batch fingerprint (spec §26) ----
@@ -349,7 +349,7 @@ async function createBatchCore(
 
     // ---- VALIDATION (spec §6, §8) — validate every record, reject nothing silently ----
     const pfas = await ctx.db.query("pfas").collect();
-    if (pfas.length === 0) throw new Error("No PFAs configured on the platform");
+    if (pfas.length === 0) throw new ConvexError("No PFAs configured on the platform");
     // Selectable PFAs only — inactive PFAs cannot enter NEW contribution
     // batches (their records stay visible historically via pfaId).
     const pfaByCode = new Map(
@@ -375,7 +375,7 @@ async function createBatchCore(
         .first();
       if (!clash) break;
       batchRef = `BATCH-${year}-${String(month).padStart(2, "0")}-${randRef("", 5)}`;
-      if (attempt === 4) throw new Error("Could not allocate a unique batch reference — retry");
+      if (attempt === 4) throw new ConvexError("Could not allocate a unique batch reference — retry");
     }
 
     const batchId = await ctx.db.insert("contributionBatches", {
@@ -506,21 +506,21 @@ export const payBatch = mutation({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForEngine(ctx, user);
-    if (!employer) throw new Error("No employer profile");
-    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new Error("Employer account must be approved before payment.");
+    if (!employer) throw new ConvexError("No employer profile");
+    if (employer.status !== "active" || employer.kycStatus !== "verified") throw new ConvexError("Employer account must be approved before payment.");
 
     const batch = await ctx.db.get(batchId);
-    if (!batch || batch.employerId !== employer._id) throw new Error("Batch not found");
-    if (batch.status !== "awaiting_payment") throw new Error(`Batch is not payable (status: ${batch.status})`);
+    if (!batch || batch.employerId !== employer._id) throw new ConvexError("Batch not found");
+    if (batch.status !== "awaiting_payment") throw new ConvexError(`Batch is not payable (status: ${batch.status})`);
 
     const records = await ctx.db
       .query("contributionRecords")
       .withIndex("by_batch", (q) => q.eq("batchId", batchId))
       .take(10_000);
     const valid = records.filter((r) => r.validationStatus === "valid");
-    if (valid.length === 0) throw new Error("No valid records to pay");
+    if (valid.length === 0) throw new ConvexError("No valid records to pay");
 
     const employeeSum = valid.reduce((s, r) => s + r.employeeContribution, 0);
     const employerSum = valid.reduce((s, r) => s + r.employerContribution, 0);
@@ -547,7 +547,7 @@ export const payBatch = mutation({
         .first();
       if (!clash) break;
       paymentRef = randRef("PMT", 8);
-      if (attempt === 4) throw new Error("Could not allocate a unique payment reference — retry");
+      if (attempt === 4) throw new ConvexError("Could not allocate a unique payment reference — retry");
     }
     const idempotencyKey = batch.fingerprint;
 
@@ -560,7 +560,7 @@ export const payBatch = mutation({
 
     const railMode = await resolveRailMode(ctx);
     if (railMode === "unavailable") {
-      throw new Error(
+      throw new ConvexError(
         "No payment rail is configured. A platform administrator must enable the live Paystack payment rail before contributions can be paid.",
       );
     }
@@ -634,7 +634,7 @@ export const payBatch = mutation({
     });
     if (!railResult.accepted) {
       await markChargeFailed(ctx, batchId);
-      throw new Error("Payment rail declined the collection");
+      throw new ConvexError("Payment rail declined the collection");
     }
 
     const sandboxPaymentId = await ctx.db.insert("payments", {
@@ -696,7 +696,7 @@ async function recordSuccessfulPayment(
   const now = Date.now();
 
   const payment = await ctx.db.get(opts.paymentId);
-  if (!payment || payment.batchId !== opts.batchId) throw new Error("Payment does not belong to this batch");
+  if (!payment || payment.batchId !== opts.batchId) throw new ConvexError("Payment does not belong to this batch");
   // Any other open checkout attempt for this batch is now superseded.
   const attempts = await ctx.db
     .query("payments")
@@ -830,12 +830,12 @@ export const finalizeLivePaymentSystem = internalMutation({
   args: { paymentId: v.id("payments"), providerFeesKobo: v.optional(v.number()) },
   handler: async (ctx, { paymentId, providerFeesKobo }) => {
     const payment = await ctx.db.get(paymentId);
-    if (!payment) throw new Error("Payment not found");
+    if (!payment) throw new ConvexError("Payment not found");
     if (payment.status === "successful") {
       return { ok: true as const, alreadyProcessed: true };
     }
     const batch = await ctx.db.get(payment.batchId);
-    if (!batch) throw new Error("Batch not found");
+    if (!batch) throw new ConvexError("Batch not found");
     const employer = await ctx.db.get(payment.employerId);
     const records = await ctx.db
       .query("contributionRecords")
@@ -947,12 +947,12 @@ export const resumePipeline = mutation({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const batch = await ctx.db.get(batchId);
-    if (!batch) throw new Error("Batch not found");
+    if (!batch) throw new ConvexError("Batch not found");
     if (user.role !== "admin") {
       const employer = await getEmployerForEngine(ctx, user);
-      if (!employer || batch.employerId !== employer._id) throw new Error("Batch not found");
+      if (!employer || batch.employerId !== employer._id) throw new ConvexError("Batch not found");
     }
     await audit(ctx, {
       actor: user.email ?? "unknown",
@@ -976,7 +976,7 @@ export const processPipeline = internalMutation({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }) => {
     const batch = await ctx.db.get(batchId);
-    if (!batch) throw new Error("Batch not found");
+    if (!batch) throw new ConvexError("Batch not found");
     // Several triggers may schedule this (payment confirmation, browser
     // resume, PFA dispatch loop, settlement confirmation). Anything not in
     // `processing` is already finished or not yet paid: a harmless no-op.
@@ -1017,7 +1017,7 @@ export const processPipeline = internalMutation({
     // ---- SETTLEMENT ENGINE: one instruction per PFA through the sandbox rail ----
     await ctx.db.patch(batchId, { settlementStatus: "processing" });
     const payment = await getActivePayment(ctx, batchId);
-    if (!payment || payment.status !== "successful") throw new Error("Confirmed payment missing for batch");
+    if (!payment || payment.status !== "successful") throw new ConvexError("Confirmed payment missing for batch");
 
     const existingSettlements = await ctx.db
       .query("settlements")
@@ -1246,12 +1246,12 @@ export const processPipeline = internalMutation({
       }
     }
     const ackByPfa = new Map(ackRows.map((a) => [String(a.pfaId), a.status]));
+    // Per-record status from the PERSISTED settlement rows (re-read above),
+    // never from in-memory copies created earlier in this run.
+    const persistedByPfa = new Map(finalSettlements.map((x) => [String(x.pfaId), x]));
     for (const r of valid) {
-      const settlement = settlementByPfa.get(String(r.pfaId));
-      // Entries created earlier in this run are in-memory copies without a
-      // status field — only trust status when it is actually present.
-      const settlementStatus =
-        settlement && "status" in settlement ? settlement.status : undefined;
+      const settlement = persistedByPfa.get(String(r.pfaId));
+      const settlementStatus = settlement?.status;
       const ackStatus = settlement && ackByPfa.get(String(r.pfaId));
       await ctx.db.patch(r._id, {
         settlementStatus: settlement

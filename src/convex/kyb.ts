@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -30,9 +30,9 @@ export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
-    if (!employer) throw new Error("Register your company before uploading documents");
+    if (!employer) throw new ConvexError("Register your company before uploading documents");
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -58,10 +58,10 @@ export const attachDocument = action({
   },
   handler: async (ctx, { storageId, kind, fileName }): Promise<{ documentId: Id<"kybDocuments"> }> => {
     const blob = await ctx.storage.get(storageId);
-    if (!blob) throw new Error("Upload not found — please try again");
+    if (!blob) throw new ConvexError("Upload not found — please try again");
     const reject = async (msg: string): Promise<never> => {
       await ctx.storage.delete(storageId);
-      throw new Error(msg);
+      throw new ConvexError(msg);
     };
     if (blob.size > MAX_BYTES) return await reject("Files must be 10 MB or smaller");
     const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
@@ -92,16 +92,16 @@ export const recordDocument = internalMutation({
   },
   handler: async (ctx, { storageId, kind, fileName, contentType, size }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
-    if (!employer) throw new Error("No employer profile");
-    if (!(KYB_KINDS as readonly string[]).includes(kind)) throw new Error("Unknown document type");
+    if (!employer) throw new ConvexError("No employer profile");
+    if (!(KYB_KINDS as readonly string[]).includes(kind)) throw new ConvexError("Unknown document type");
     const already = await ctx.db
       .query("kybDocuments")
       .withIndex("by_employer", (q) => q.eq("employerId", employer._id))
       .take(MAX_DOCS + 1);
-    if (already.some((d) => d.storageId === storageId)) throw new Error("This file is already attached");
-    if (already.length >= MAX_DOCS) throw new Error(`At most ${MAX_DOCS} documents per company`);
+    if (already.some((d) => d.storageId === storageId)) throw new ConvexError("This file is already attached");
+    if (already.length >= MAX_DOCS) throw new ConvexError(`At most ${MAX_DOCS} documents per company`);
 
     const cleanName = fileName.replace(/[^\w.\- ()]/g, "_").slice(0, 120) || "document";
     const id = await ctx.db.insert("kybDocuments", {
@@ -144,7 +144,7 @@ export const listDocuments = query({
     if (user.role !== "admin") {
       const own = await getEmployerForUser(ctx, user);
       if (!own) return [];
-      if (employerId && employerId !== own._id) throw new Error("Not authorized");
+      if (employerId && employerId !== own._id) throw new ConvexError("Not authorized");
       target = own._id;
     }
     if (!target) return [];
@@ -175,12 +175,12 @@ export const removeDocument = mutation({
   args: { documentId: v.id("kybDocuments") },
   handler: async (ctx, { documentId }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const doc = await ctx.db.get(documentId);
-    if (!doc) throw new Error("Document not found");
+    if (!doc) throw new ConvexError("Document not found");
     const own = await getEmployerForUser(ctx, user);
-    if (!own || own._id !== doc.employerId) throw new Error("Not authorized");
-    if (doc.status === "accepted") throw new Error("Accepted documents are kept for the audit record");
+    if (!own || own._id !== doc.employerId) throw new ConvexError("Not authorized");
+    if (doc.status === "accepted") throw new ConvexError("Accepted documents are kept for the audit record");
     await ctx.storage.delete(doc.storageId);
     await ctx.db.delete(documentId);
     await audit(ctx, {
@@ -204,11 +204,11 @@ export const reviewDocument = mutation({
   },
   handler: async (ctx, { documentId, decision, note }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (user.role !== "admin") throw new Error("Admin access required");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (user.role !== "admin") throw new ConvexError("Admin access required");
     const doc = await ctx.db.get(documentId);
-    if (!doc) throw new Error("Document not found");
-    if (decision === "rejected" && !(note ?? "").trim()) throw new Error("Give the employer a reason for the rejection");
+    if (!doc) throw new ConvexError("Document not found");
+    if (decision === "rejected" && !(note ?? "").trim()) throw new ConvexError("Give the employer a reason for the rejection");
     await ctx.db.patch(documentId, {
       status: decision,
       reviewNote: note?.trim().slice(0, 500),

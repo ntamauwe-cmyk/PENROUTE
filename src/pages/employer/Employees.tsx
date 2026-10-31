@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -115,7 +116,7 @@ export default function Employees() {
       }
       setForm({ ...EMPTY_FORM });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save employee");
+      toast.error(friendlyError(e, "Could not save employee"));
     } finally {
       setSaving(false);
     }
@@ -204,7 +205,7 @@ export default function Employees() {
     <DashboardShell>
       <PageHeader
         title="Employees"
-        description="Your pension roster — every employee needs a valid RSA PIN and PFA before contributions."
+        description="Your pension roster — every employee needs a valid RSA PIN and PFA before contributions. Staff can confirm their own contributions at penroute.net/check with their RSA PIN, staff ID and surname."
         actions={
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
@@ -313,7 +314,7 @@ export default function Employees() {
                       try {
                         await toggleActive({ employeeId: e._id });
                       } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Update failed");
+                        toast.error(friendlyError(err, "Update failed"));
                       }
                     }}
                   >

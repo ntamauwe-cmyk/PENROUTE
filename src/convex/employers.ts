@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { MutationCtx, QueryCtx, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -61,9 +62,9 @@ export function generateApiKeyToken(): string {
 /** An employer may only manage their own API key. */
 export async function requireOwnEmployer(ctx: MutationCtx) {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
+  if (!user) throw new ConvexError("Not authenticated");
   const employer = await getEmployerForUser(ctx, user);
-  if (!employer) throw new Error("No employer profile — complete onboarding first");
+  if (!employer) throw new ConvexError("No employer profile — complete onboarding first");
   return { user, employer };
 }
 
@@ -97,7 +98,7 @@ export const revokeApiKey = mutation({
   args: {},
   handler: async (ctx) => {
     const { user, employer } = await requireOwnEmployer(ctx);
-    if (!employer.apiKey && !employer.apiKeyHash) throw new Error("No API key configured");
+    if (!employer.apiKey && !employer.apiKeyHash) throw new ConvexError("No API key configured");
     await ctx.db.patch(employer._id, {
       apiKey: undefined,
       apiKeyHash: undefined,

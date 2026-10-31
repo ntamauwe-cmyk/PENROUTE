@@ -514,6 +514,16 @@ const schema = defineSchema(
       .index("by_pfa", ["pfaId", "createdAt"]),
 
     // ------------------------------------------------------------------
+    // Employee self-service lookups — failed-attempt throttle per RSA PIN
+    // (stores a SHA-256 of the PIN, never the PIN itself).
+    // ------------------------------------------------------------------
+    employeeLookups: defineTable({
+      pinHash: v.string(),
+      windowStart: v.number(),
+      failures: v.number(),
+    }).index("by_pinHash", ["pinHash"]),
+
+    // ------------------------------------------------------------------
     // GitHub sync — staged files for committing the project source to the
     // user's existing repository via the GitHub Git Data API (one commit).
     // ------------------------------------------------------------------

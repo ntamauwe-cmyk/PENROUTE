@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -162,10 +162,10 @@ export const setSalaryPayDay = mutation({
   args: { day: v.number() },
   handler: async (ctx, { day }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
-    if (!employer) throw new Error("No employer profile");
-    if (!Number.isInteger(day) || day < 1 || day > 31) throw new Error("Pay day must be between 1 and 31");
+    if (!employer) throw new ConvexError("No employer profile");
+    if (!Number.isInteger(day) || day < 1 || day > 31) throw new ConvexError("Pay day must be between 1 and 31");
     await ctx.db.patch(employer._id, { salaryPayDay: day });
     await audit(ctx, {
       actor: user.email ?? "unknown",
