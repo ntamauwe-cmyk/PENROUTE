@@ -388,6 +388,7 @@ export const listEmployerEmployees = query({
         pfaId: e.pfaId,
         pfaName: pfaById.get(e.pfaId)?.name ?? "Unknown PFA",
         pfaCode: pfaById.get(e.pfaId)?.code ?? "?",
+        monthlyEmolumentKobo: e.monthlyEmolumentKobo ?? null,
       }));
   },
 });
@@ -736,14 +737,23 @@ export const resolveException = mutation({
 // Employee management (spec §6) — employer users maintain their own roster
 // ============================================================================
 
+function emolumentKobo(naira: number | undefined): number | undefined {
+  if (naira === undefined) return undefined;
+  if (!Number.isFinite(naira) || naira < 0 || naira > 1_000_000_000) {
+    throw new Error("Monthly emoluments must be between ₦0 and ₦1,000,000,000");
+  }
+  return naira === 0 ? undefined : Math.round(naira * 100);
+}
+
 export const addEmployee = mutation({
   args: {
     fullName: v.string(),
     employeeCode: v.string(),
     pensionPin: v.string(),
     pfaId: v.id("pfas"),
+    monthlyEmolument: v.optional(v.number()), // naira
   },
-  handler: async (ctx, { fullName, employeeCode, pensionPin, pfaId }) => {
+  handler: async (ctx, { fullName, employeeCode, pensionPin, pfaId, monthlyEmolument }) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
@@ -776,6 +786,7 @@ export const addEmployee = mutation({
       pensionPin: cleanPin,
       pfaId,
       active: true,
+      monthlyEmolumentKobo: emolumentKobo(monthlyEmolument),
       createdAt: now,
     });
     await ctx.db.patch(employer._id, { employeeCount: (employer.employeeCount ?? 0) + 1 });
@@ -798,8 +809,9 @@ export const updateEmployee = mutation({
     employeeCode: v.string(),
     pensionPin: v.string(),
     pfaId: v.id("pfas"),
+    monthlyEmolument: v.optional(v.number()), // naira; omit to keep current
   },
-  handler: async (ctx, { employeeId, fullName, employeeCode, pensionPin, pfaId }) => {
+  handler: async (ctx, { employeeId, fullName, employeeCode, pensionPin, pfaId, monthlyEmolument }) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new Error("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
@@ -842,6 +854,7 @@ export const updateEmployee = mutation({
       employeeCode: employeeCode.trim(),
       pensionPin: cleanPin,
       pfaId,
+      ...(monthlyEmolument !== undefined ? { monthlyEmolumentKobo: emolumentKobo(monthlyEmolument) } : {}),
     });
     await audit(ctx, {
       actor: user.email ?? "unknown",

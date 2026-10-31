@@ -65,6 +65,7 @@ export const getReadyEmployees = query({
             fullName: e.fullName,
             pensionPin: e.pensionPin,
             pfaId: e.pfaId,
+            monthlyEmolumentKobo: e.monthlyEmolumentKobo ?? null,
             record: rec
               ? {
                   employeeContribution: rec.employeeContribution,

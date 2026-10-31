@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
+import { RemittanceDeadlineCard } from "@/components/Compliance";
 import { useAuth } from "@/hooks/use-auth";
 import {
   CYCLE_STAGES,
@@ -207,6 +208,8 @@ export default function Overview() {
           </Button>
         </div>
       </div>
+
+      {canPay && <RemittanceDeadlineCard onPay={() => setWizardOpen(true)} />}
 
       {!canPay && (
         <div

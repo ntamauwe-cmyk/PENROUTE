@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DashboardShell } from "@/components/DashboardShell";
+import { ComplianceRecord } from "@/components/Compliance";
 import { ClayTable, LoadingBlock, PageHeader, StatusPill, useEmployer } from "@/components/pension-ui";
 import { downloadCsv, fmtDate, fmtNaira, monthName, MONTHS } from "@/lib/pension";
 import { Download } from "lucide-react";
@@ -178,6 +179,8 @@ export default function Statements() {
           </div>
         }
       />
+
+      <ComplianceRecord />
 
       {/* Pension activity by PFA — real aggregates from the backend */}
       <section className="space-y-3">

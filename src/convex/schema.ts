@@ -71,6 +71,8 @@ const schema = defineSchema(
       // Legal acceptance recorded at registration (version of the published terms).
       termsAcceptedAt: v.optional(v.number()),
       employeeCount: v.optional(v.number()), // denormalised roster size
+      salaryPayDay: v.optional(v.number()), // 1..31 — drives the remittance deadline
+      lastDeadlineReminder: v.optional(v.string()), // "YYYY-MM:kind" — reminder idempotency
       termsVersion: v.optional(v.string()),
       termsAcceptedBy: v.optional(v.id("users")),
       createdAt: v.number(),
@@ -125,6 +127,9 @@ const schema = defineSchema(
       pensionPin: v.string(), // RSA PIN
       pfaId: v.id("pfas"),
       active: v.boolean(),
+      // Monthly emoluments (basic + housing + transport), kobo — drives the
+      // statutory 8% / 10% contribution calculation.
+      monthlyEmolumentKobo: v.optional(v.number()),
       createdAt: v.number(),
     })
       .index("by_employer", ["employerId"])

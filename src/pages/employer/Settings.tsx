@@ -27,6 +27,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 
 import { toast } from "sonner";
 import { KybDocumentsUpload } from "@/components/KybDocuments";
+import { SalaryPayDaySetting } from "@/components/Compliance";
 
 export default function Settings() {
   const { employer, loading } = useEmployer();
@@ -106,6 +107,7 @@ export default function Settings() {
       )}
 
       {employer && <KybDocumentsUpload />}
+      {employer && <SalaryPayDaySetting />}
 
       {/* Payroll/HR API integration (spec §4) */}
       <PayrollIntegrationCard keyStatus={keyStatus ?? null} hasEmployer={Boolean(employer)} />
