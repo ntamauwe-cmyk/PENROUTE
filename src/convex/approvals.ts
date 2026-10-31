@@ -65,10 +65,11 @@ export const listPricingRequests = query({
     const tag = (r: (typeof pending)[number]) => ({
       ...r,
       mine: r.proposedBy === user._id,
-      canApprove: Boolean(user.pricingApprover) && r.proposedBy !== user._id && r.status === "pending",
+      canApprove: Boolean(user.pricingApprover || user.superAdmin) && r.proposedBy !== user._id && r.status === "pending",
     });
     return {
-      isApprover: Boolean(user.pricingApprover),
+      isApprover: Boolean(user.pricingApprover || user.superAdmin),
+      isSuperAdmin: Boolean(user.superAdmin),
       pending: pending.map(tag),
       recent: recent.slice(0, 15).map(tag),
     };
@@ -79,8 +80,8 @@ export const approvePricingChange = mutation({
   args: { requestId: v.id("pricingChangeRequests"), note: v.optional(v.string()) },
   handler: async (ctx, { requestId, note }) => {
     const user = await requireAdmin(ctx);
-    if (!user.pricingApprover) {
-      throw new ConvexError("Only an administrator with fee-approval authority can approve pricing changes");
+    if (!user.pricingApprover && !user.superAdmin) {
+      throw new ConvexError("Only the super admin or an administrator they assigned can approve pricing changes");
     }
     const req = await ctx.db.get(requestId);
     if (!req) throw new ConvexError("Request not found");
@@ -126,7 +127,7 @@ export const rejectPricingChange = mutation({
     if (!req) throw new ConvexError("Request not found");
     if (req.status !== "pending") throw new ConvexError(`This change was already ${req.status}`);
     const own = req.proposedBy === user._id;
-    if (!own && !user.pricingApprover) {
+    if (!own && !user.pricingApprover && !user.superAdmin) {
       throw new ConvexError("Only the proposer or a fee approver can withdraw or reject this change");
     }
     if (!own && !note.trim()) throw new ConvexError("Give a reason for rejecting the change");
@@ -169,17 +170,18 @@ export const listAdmins = query({
   handler: async (ctx) => {
     const me = await requireAdmin(ctx);
     const users = await ctx.db.query("users").take(10_000);
-    const anyApprover = users.some((u) => u.role === "admin" && u.pricingApprover);
+    const anySuper = users.some((u) => u.role === "admin" && u.superAdmin);
     return {
-      canManage: Boolean(me.pricingApprover),
-      // One-time path for deployments created before approval authority existed.
-      canClaimApprover: !anyApprover && bootstrapAdminEmails().has((me.email ?? "").trim().toLowerCase()),
+      canManage: Boolean(me.superAdmin),
+      // One-time path for deployments created before the super admin existed.
+      canClaimApprover: !anySuper && bootstrapAdminEmails().has((me.email ?? "").trim().toLowerCase()),
       admins: users
         .filter((u) => u.role === "admin")
         .map((u) => ({
           _id: u._id,
           email: u.email ?? "(no email)",
-          pricingApprover: Boolean(u.pricingApprover),
+          pricingApprover: Boolean(u.pricingApprover || u.superAdmin),
+          superAdmin: Boolean(u.superAdmin),
           isMe: u._id === me._id,
         }))
         .sort((a, b) => a.email.localeCompare(b.email)),
@@ -195,8 +197,8 @@ export const setAdminAccess = mutation({
   },
   handler: async (ctx, { email, admin, pricingApprover }) => {
     const me = await requireAdmin(ctx);
-    if (!me.pricingApprover) {
-      throw new ConvexError("Only an administrator with fee-approval authority can manage administrators");
+    if (!me.superAdmin) {
+      throw new ConvexError("Only the super admin can manage administrators and approval authority");
     }
     const norm = email.trim().toLowerCase();
     const target = (await ctx.db.query("users").withIndex("email", (q) => q.eq("email", norm)).take(10)).find(
@@ -205,13 +207,8 @@ export const setAdminAccess = mutation({
     if (!target) throw new ConvexError(`${norm} has not signed in to Penroute yet — ask them to sign in once first`);
     if (target.role === "pfa") throw new ConvexError("This account is a PFA portal operator and cannot be an administrator");
     if (!admin && pricingApprover) throw new ConvexError("Approval authority requires administrator access");
-    if (target._id === me._id && (!admin || !pricingApprover)) {
-      throw new ConvexError("You cannot remove your own authority — ask another approver");
-    }
-    // Never leave the platform without an approver.
-    if (target.pricingApprover && !pricingApprover) {
-      const approvers = (await ctx.db.query("users").take(10_000)).filter((u) => u.role === "admin" && u.pricingApprover);
-      if (approvers.length <= 1) throw new ConvexError("At least one administrator must keep fee-approval authority");
+    if (target._id === me._id || target.superAdmin) {
+      throw new ConvexError("The super admin's own access cannot be changed here");
     }
     const before = `${target.role ?? "user"}${target.pricingApprover ? "+approver" : ""}`;
     await ctx.db.patch(target._id, {
@@ -232,8 +229,8 @@ export const setAdminAccess = mutation({
   },
 });
 
-/** One-time: the founding operator (PENROUTE_BOOTSTRAP_ADMIN_EMAILS) takes
- *  fee-approval authority on a deployment where NO approver exists yet. */
+/** One-time: the founding operator (PENROUTE_BOOTSTRAP_ADMIN_EMAILS) becomes
+ *  super admin on a deployment where none exists yet. */
 export const claimApproverAuthority = mutation({
   args: {},
   handler: async (ctx) => {
@@ -242,16 +239,16 @@ export const claimApproverAuthority = mutation({
       throw new ConvexError("Only the founding operator account can claim approval authority");
     }
     const users = await ctx.db.query("users").take(10_000);
-    if (users.some((u) => u.role === "admin" && u.pricingApprover)) {
-      throw new ConvexError("An approver already exists — ask them to grant you authority");
+    if (users.some((u) => u.role === "admin" && u.superAdmin)) {
+      throw new ConvexError("A super admin already exists");
     }
-    await ctx.db.patch(me._id, { pricingApprover: true });
+    await ctx.db.patch(me._id, { pricingApprover: true, superAdmin: true });
     await audit(ctx, {
       actor: me.email ?? "admin",
-      action: "approver_authority_claimed",
+      action: "super_admin_claimed",
       entityType: "user",
       entityId: me._id,
-      details: "Founding operator claimed fee-approval authority (no approver existed)",
+      details: "Founding operator became super admin (none existed)",
     });
     return { ok: true };
   },

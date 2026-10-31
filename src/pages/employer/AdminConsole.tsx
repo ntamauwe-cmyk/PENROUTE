@@ -209,10 +209,15 @@ function AdminConsoleBody() {
     }
     setBusy(true);
     try {
-      await updateFee({ perEmployeeFeeKobo: n });
-      toast.success("Fee change submitted for approval", {
-        description: `₦${(n / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} per employee takes effect once another administrator with fee-approval authority approves it.`,
-      });
+      const res = await updateFee({ perEmployeeFeeKobo: n });
+      const amount = `₦${(n / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
+      if ("pending" in res) {
+        toast.success("Fee change submitted for approval", {
+          description: `${amount} per employee takes effect once the super admin or an assigned approver approves it.`,
+        });
+      } else {
+        toast.success(`Fee updated to ${amount} per employee — applied to every active pricing tier`);
+      }
       setEditingFee(false);
       setFee(null);
     } catch (e) {
@@ -516,9 +521,10 @@ function AdminConsoleBody() {
           <section className="pen-card-lg p-6">
             <h2 className="font-bold tracking-tight">Fee management</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Per-employee contribution processing fee. A change is submitted for approval and
-              takes effect — on every active pricing tier, quotes, Billing and the public pricing
-              page — only after a different administrator with fee-approval authority approves it.
+              Per-employee contribution processing fee, applied to every active pricing tier,
+              quotes, Billing and the public pricing page. Only the super admin changes it
+              directly; any other administrator's change waits for approval by the super admin or
+              an approver they assigned.
             </p>
             {!editingFee ? (
               <div className="mt-4 flex flex-wrap items-center gap-4">
@@ -565,7 +571,7 @@ function AdminConsoleBody() {
                   </div>
                 </div>
                 <Button className="font-semibold" onClick={saveFee} disabled={busy}>
-                  Submit for approval
+                  {pricingRequests?.isSuperAdmin ? "Save new fee" : "Submit for approval"}
                 </Button>
                 <Button
                   variant="ghost"

@@ -40,6 +40,9 @@ const schema = defineSchema(
       pfaId: v.optional(v.id("pfas")), // link for PFA-portal users
       // Higher authority: may APPROVE pricing/fee changes proposed by another admin.
       pricingApprover: v.optional(v.boolean()),
+      // The platform owner: changes pricing directly and alone manages the
+      // administrator team and who may approve.
+      superAdmin: v.optional(v.boolean()),
     }).index("email", ["email"]),
 
     // ------------------------------------------------------------------

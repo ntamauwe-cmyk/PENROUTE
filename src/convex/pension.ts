@@ -473,7 +473,7 @@ export const claimPlatformAdmin = mutation({
     }
     // The founding operator holds fee-approval authority (maker-checker:
     // they can approve changes proposed by OTHER admins, never their own).
-    await ctx.db.patch(user._id, { role: "admin", pricingApprover: true });
+    await ctx.db.patch(user._id, { role: "admin", pricingApprover: true, superAdmin: true });
     await ctx.db.insert("auditLogs", {
       actor: user.email,
       action: "platform_admin_bootstrapped",
