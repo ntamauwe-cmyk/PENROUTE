@@ -22,7 +22,6 @@
 | `PENROUTE_APP_URL` | Convex deployment env | optional | Public app URL used in email links (default `https://penroute.net`). |
 | `PENROUTE_SANDBOX_MODE` | Convex deployment env | dev/preview only | `enabled` marks a NON-production deployment: allows the simulated sandbox payment rail, sandbox PFA acknowledgements, demo seeding and guest workspaces. **Never set on production.** Unset = production behaviour (fail closed). |
 | `PENROUTE_BOOTSTRAP_ADMIN_EMAILS` | Convex deployment env | first launch | Comma-separated operator emails allowed to claim the one-time platform-admin bootstrap. Unset = nobody can self-claim admin (use `npx convex run admin:grantPlatformAdmin '{"email":"…"}'`). |
-| `VLY_CONVEX_AUTH_ISSUER` | Convex deployment env | Freebuff previews only | When set, tokens from this issuer are trusted for sign-in. Leave UNSET on production — no third-party issuer is trusted by default. |
 | `VLY_APP_NAME`, `VLY_APP_ID`, `VLY_INTEGRATION_KEY` | Convex deployment env | optional | Freebuff branding/integration (not required in production) |
 | `VLY_MONITORING_URL` | Convex deployment env | optional | Telemetry sink; no-op when unset |
 

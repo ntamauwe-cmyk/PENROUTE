@@ -19,7 +19,6 @@ and fill in your own values if you self-host.
 | `GITHUB_TOKEN` | GitHub personal access token (**classic**, with the `repo` scope) used by Settings → GitHub repository sync to commit the project source to your existing repository. Set in the Keys tab; read server-side only |
 | `VLY_INTEGRATION_KEY` | Freebuff integration gateway token (injected by the platform) |
 | `VLY_INTEGRATION_BASE_URL` | Freebuff integration gateway base URL (injected by the platform) |
-| `VLY_CONVEX_AUTH_ISSUER` | Freebuff federated-auth issuer (injected by the platform) |
 | `VLY_APP_NAME` | App name used in OTP emails (injected by the platform) |
 | `EMAIL_OTP_API_KEY` | Optional override for the Freebuff email-OTP relay key used by `auth/emailOtp.ts`. Leave unset to use the built-in platform key; set it in the Keys tab to rotate the relay key without a code change |
 | `VITE_VLY_APP_ID` / `VITE_VLY_MONITORING_URL` | Freebuff preview/error monitoring (injected by the platform) |
