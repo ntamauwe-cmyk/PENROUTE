@@ -3,6 +3,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -13,21 +14,21 @@ import {
 import { DashboardShell } from "@/components/DashboardShell";
 import { ComplianceRecord } from "@/components/Compliance";
 import { ClayTable, LoadingBlock, PageHeader, StatusPill, useEmployer } from "@/components/pension-ui";
-import { downloadCsv, fmtDate, fmtNaira, monthName, MONTHS } from "@/lib/pension";
+import { downloadCsv, fmtDate, fmtNaira, monthName } from "@/lib/pension";
 import { Download } from "lucide-react";
+
+const fmtIso = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 export default function Statements() {
   const { batches, loading } = useEmployer();
-  const [monthFilter, setMonthFilter] = useState("all");
-  const [yearFilter, setYearFilter] = useState("all");
+  // Statement date range (YYYY-MM-DD; empty = open-ended).
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const rangeInvalid = Boolean(fromDate && toDate && fromDate > toDate);
   const [pfaFilter, setPfaFilter] = useState("all");
   // PFA report rows (real backend aggregates — employer-scoped or platform-wide).
   const pfaReport = useQuery(api.pfaDirectory.getPfaReports);
-
-  const years = useMemo(
-    () => [...new Set(batches.map((b) => b.contributionYear))].sort((a, b) => b - a),
-    [batches],
-  );
 
   // Which batch refs touch the selected PFA (empty set = no PFA activity).
   const pfaBatchRefs = useMemo(() => {
@@ -37,10 +38,13 @@ export default function Statements() {
   }, [pfaFilter, pfaReport]);
 
   const filtered = batches.filter((b) => {
-    const mOk = monthFilter === "all" || String(b.contributionMonth) === monthFilter;
-    const yOk = yearFilter === "all" || String(b.contributionYear) === yearFilter;
+    // A month is in the statement when its period overlaps the chosen range.
+    const pStart = `${b.contributionYear}-${String(b.contributionMonth).padStart(2, "0")}-01`;
+    const pEnd = new Date(Date.UTC(b.contributionYear, b.contributionMonth, 0)).toISOString().slice(0, 10);
+    const fromOk = !fromDate || pEnd >= fromDate;
+    const toOk = !toDate || pStart <= toDate;
     const pfaOk = pfaBatchRefs === null || pfaBatchRefs.has(b.batchRef);
-    return mOk && yOk && pfaOk;
+    return !rangeInvalid && fromOk && toOk && pfaOk;
   });
 
   const reportRows = useMemo(() => {
@@ -141,8 +145,9 @@ export default function Statements() {
   );
 
   const exportCsv = () => {
-    downloadCsv("contribution-statement.csv", [
-      ["MONTHLY CONTRIBUTION STATEMENT"],
+    downloadCsv(`contribution-statement${fromDate ? `-from-${fromDate}` : ""}${toDate ? `-to-${toDate}` : ""}.csv`, [
+      ["CONTRIBUTION STATEMENT"],
+      ["Statement period", `${fromDate ? fmtIso(fromDate) : "First contribution"} – ${toDate ? fmtIso(toDate) : "Today"}`],
       ["Generated", new Date().toISOString()],
       [],
       ["Period", "Batch", "Employees", "Employee contributions", "Employer contributions", "Pension total", "Processing fee", "Total paid", "Status", "Paid on"],
@@ -286,38 +291,46 @@ export default function Statements() {
 
       {/* Filters */}
       <div className="clay flex flex-wrap items-end gap-4 p-4">
-        <div className="w-40">
-          <Label>Month</Label>
-          <Select value={monthFilter} onValueChange={setMonthFilter}>
-            <SelectTrigger className="mt-1.5 w-full cursor-pointer">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All months</SelectItem>
-              {MONTHS.map((m, i) => (
-                <SelectItem key={m} value={String(i + 1)}>
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="w-44">
+          <Label htmlFor="stmt-from">Statement start date</Label>
+          <Input
+            id="stmt-from"
+            type="date"
+            className="mt-1.5"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
         </div>
-        <div className="w-32">
-          <Label>Year</Label>
-          <Select value={yearFilter} onValueChange={setYearFilter}>
-            <SelectTrigger className="mt-1.5 w-full cursor-pointer">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All years</SelectItem>
-              {years.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="w-44">
+          <Label htmlFor="stmt-to">Statement end date</Label>
+          <Input
+            id="stmt-to"
+            type="date"
+            className="mt-1.5"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={(e) => setToDate(e.target.value)}
+          />
         </div>
+        {(fromDate || toDate) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-end"
+            onClick={() => {
+              setFromDate("");
+              setToDate("");
+            }}
+          >
+            Clear dates
+          </Button>
+        )}
+        {rangeInvalid && (
+          <p className="w-full text-xs font-medium text-destructive">
+            The start date must be on or before the end date.
+          </p>
+        )}
         <div className="w-40">
           <Label>PFA</Label>
           <Select value={pfaFilter} onValueChange={setPfaFilter}>
