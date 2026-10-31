@@ -38,6 +38,8 @@ const schema = defineSchema(
       // platform extensions
       employerId: v.optional(v.id("employers")), // link for employer-portal users
       pfaId: v.optional(v.id("pfas")), // link for PFA-portal users
+      // Higher authority: may APPROVE pricing/fee changes proposed by another admin.
+      pricingApprover: v.optional(v.boolean()),
     }).index("email", ["email"]),
 
     // ------------------------------------------------------------------
@@ -522,6 +524,25 @@ const schema = defineSchema(
       windowStart: v.number(),
       failures: v.number(),
     }).index("by_pinHash", ["pinHash"]),
+
+    // ------------------------------------------------------------------
+    // Pricing change requests — maker-checker: one admin proposes, a
+    // DIFFERENT admin with pricingApprover authority approves before any
+    // price/fee changes. Every decision is audited.
+    // ------------------------------------------------------------------
+    pricingChangeRequests: defineTable({
+      kind: v.string(), // flatFee | createTier | updateTier | setTierActive | createPlan | updatePlan | setPlanActive
+      args: v.string(), // JSON of the proposed change
+      summary: v.string(),
+      status: v.string(), // pending | approved | rejected | cancelled
+      proposedBy: v.id("users"),
+      proposedByEmail: v.string(),
+      decidedBy: v.optional(v.id("users")),
+      decidedByEmail: v.optional(v.string()),
+      decisionNote: v.optional(v.string()),
+      decidedAt: v.optional(v.number()),
+      createdAt: v.number(),
+    }).index("by_status", ["status", "createdAt"]),
 
     // ------------------------------------------------------------------
     // GitHub sync — staged files for committing the project source to the

@@ -215,7 +215,9 @@ check("pension: PFA allocations strip endpointConfig", pension.includes("delete 
 check("pension: PFA list strips endpointConfig", pension.includes("delete safe.endpointConfig"));
 
 check("pension: resolveException enforces employer ownership", pension.includes("mine._id !== exc.employerId"));
-check("pension: fee changes require admin", pension.includes("Only platform admins can change pricing"));
+check("pension: no direct fee-change mutation (legacy updateFeeConfig removed)", !pension.includes("export const updateFeeConfig"));
+check("pricing: every price change is a proposal (maker-checker)", ["createTier", "updateTier", "setTierActive", "createPlan", "updatePlan", "setPlanActive"].every((n) => new RegExp(`export const ${n} = mutation\\(\\{[\\s\\S]*?proposePricingChange\\(ctx, user, "${n}"`).test(readFileSync("src/convex/pricing.ts", "utf8"))));
+check("approvals: proposer can never approve own change", readFileSync("src/convex/approvals.ts", "utf8").includes("req.proposedBy === user._id"));
 
 // --- audit / integration log integrity --------------------------------------
 check("pension: internalAudit is internal (no public forging)", pension.includes("export const internalAudit = internalMutation"));

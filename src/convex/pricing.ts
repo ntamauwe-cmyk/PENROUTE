@@ -8,7 +8,8 @@
  * administrators can change them.
  * ============================================================================
  */
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type ObjectType } from "convex/values";
+import { proposePricingChange } from "./approvalCore";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -313,15 +314,18 @@ export const getPricingAudit = query({
 });
 
 /** Create a new pricing tier (new code). */
-export const createTier = mutation({
-  args: {
+const createTierArgs = {
     label: v.string(),
     minEmployees: v.number(),
     maxEmployees: v.optional(v.number()),
     feePerPostingKobo: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireAdmin(ctx);
+  };
+/** Applies an APPROVED createTier change (called only by approvals.approvePricingChange). */
+export async function apply_createTier(
+  ctx: MutationCtx,
+  args: ObjectType<typeof createTierArgs>,
+  user: Pick<Doc<"users">, "email">,
+) {
     await ensurePricingSeeded(ctx);
     const label = args.label.trim();
     if (!label) throw new ConvexError("Tier label is required");
@@ -365,6 +369,13 @@ export const createTier = mutation({
       details: `Created tier "${label}" (${tierRangeLabel(args.minEmployees, args.maxEmployees ?? null)}) at ₦${(args.feePerPostingKobo / 100).toFixed(2)} per posting`,
     });
     return { ok: true, tierId: id, code };
+}
+/** Proposes a createTier change — it takes effect only after a second, authorised approver approves it. */
+export const createTier = mutation({
+  args: createTierArgs,
+  handler: async (ctx, args) => {
+    const user = await requireAdmin(ctx);
+    return await proposePricingChange(ctx, user, "createTier", args);
   },
 });
 
@@ -373,16 +384,19 @@ export const createTier = mutation({
  * (effectiveTo) and a successor version is inserted — pricing history and any
  * already-snapshotted billing records remain intact.
  */
-export const updateTier = mutation({
-  args: {
+const updateTierArgs = {
     tierId: v.id("pricingTiers"),
     label: v.optional(v.string()),
     minEmployees: v.optional(v.number()),
     maxEmployees: v.optional(v.union(v.number(), v.null())),
     feePerPostingKobo: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireAdmin(ctx);
+  };
+/** Applies an APPROVED updateTier change (called only by approvals.approvePricingChange). */
+export async function apply_updateTier(
+  ctx: MutationCtx,
+  args: ObjectType<typeof updateTierArgs>,
+  user: Pick<Doc<"users">, "email">,
+) {
     const old = await ctx.db.get(args.tierId);
     if (!old) throw new ConvexError("Tier not found");
 
@@ -450,14 +464,24 @@ export const updateTier = mutation({
       details: `Tier "${label}" superseded — new version effective immediately; completed billing records keep their original snapshot`,
     });
     return { ok: true, tierId: newId };
+}
+/** Proposes a updateTier change — it takes effect only after a second, authorised approver approves it. */
+export const updateTier = mutation({
+  args: updateTierArgs,
+  handler: async (ctx, args) => {
+    const user = await requireAdmin(ctx);
+    return await proposePricingChange(ctx, user, "updateTier", args);
   },
 });
 
 /** Activate/deactivate a tier (at least one active tier must remain). */
-export const setTierActive = mutation({
-  args: { tierId: v.id("pricingTiers"), active: v.boolean() },
-  handler: async (ctx, { tierId, active }) => {
-    const user = await requireAdmin(ctx);
+const setTierActiveArgs = { tierId: v.id("pricingTiers"), active: v.boolean() };
+/** Applies an APPROVED setTierActive change (called only by approvals.approvePricingChange). */
+export async function apply_setTierActive(
+  ctx: MutationCtx,
+  { tierId, active }: ObjectType<typeof setTierActiveArgs>,
+  user: Pick<Doc<"users">, "email">,
+) {
     const tier = await ctx.db.get(tierId);
     if (!tier) throw new ConvexError("Tier not found");
     if (tier.active === active) return { ok: true, unchanged: true };
@@ -486,20 +510,30 @@ export const setTierActive = mutation({
       details: `Tier "${tier.label}" ${active ? "activated" : "deactivated"}`,
     });
     return { ok: true };
+}
+/** Proposes a setTierActive change — it takes effect only after a second, authorised approver approves it. */
+export const setTierActive = mutation({
+  args: setTierActiveArgs,
+  handler: async (ctx, args) => {
+    const user = await requireAdmin(ctx);
+    return await proposePricingChange(ctx, user, "setTierActive", args);
   },
 });
 
 /** Create a subscription plan. */
-export const createPlan = mutation({
-  args: {
+const createPlanArgs = {
     code: v.string(),
     name: v.string(),
     monthlyPriceKobo: v.number(),
     priceIsFrom: v.boolean(),
     description: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireAdmin(ctx);
+  };
+/** Applies an APPROVED createPlan change (called only by approvals.approvePricingChange). */
+export async function apply_createPlan(
+  ctx: MutationCtx,
+  args: ObjectType<typeof createPlanArgs>,
+  user: Pick<Doc<"users">, "email">,
+) {
     await ensurePricingSeeded(ctx);
     const code = args.code.trim().toLowerCase();
     if (!code || !args.name.trim()) throw new ConvexError("Plan code and name are required");
@@ -527,20 +561,30 @@ export const createPlan = mutation({
       details: `Created plan "${args.name.trim()}" at ₦${(args.monthlyPriceKobo / 100).toLocaleString()}/month${args.priceIsFrom ? " (from price)" : ""}`,
     });
     return { ok: true, planId: id };
+}
+/** Proposes a createPlan change — it takes effect only after a second, authorised approver approves it. */
+export const createPlan = mutation({
+  args: createPlanArgs,
+  handler: async (ctx, args) => {
+    const user = await requireAdmin(ctx);
+    return await proposePricingChange(ctx, user, "createPlan", args);
   },
 });
 
 /** Update a plan (name/price/description) — audited; assignments keep snapshots. */
-export const updatePlan = mutation({
-  args: {
+const updatePlanArgs = {
     planId: v.id("subscriptionPlans"),
     name: v.optional(v.string()),
     monthlyPriceKobo: v.optional(v.number()),
     priceIsFrom: v.optional(v.boolean()),
     description: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireAdmin(ctx);
+  };
+/** Applies an APPROVED updatePlan change (called only by approvals.approvePricingChange). */
+export async function apply_updatePlan(
+  ctx: MutationCtx,
+  args: ObjectType<typeof updatePlanArgs>,
+  user: Pick<Doc<"users">, "email">,
+) {
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new ConvexError("Plan not found");
     const name = args.name !== undefined ? args.name.trim() : plan.name;
@@ -568,14 +612,24 @@ export const updatePlan = mutation({
       details: `Plan "${name}" updated — existing assignments keep their snapshot price`,
     });
     return { ok: true };
+}
+/** Proposes a updatePlan change — it takes effect only after a second, authorised approver approves it. */
+export const updatePlan = mutation({
+  args: updatePlanArgs,
+  handler: async (ctx, args) => {
+    const user = await requireAdmin(ctx);
+    return await proposePricingChange(ctx, user, "updatePlan", args);
   },
 });
 
 /** Enable/disable a plan for future assignments. */
-export const setPlanActive = mutation({
-  args: { planId: v.id("subscriptionPlans"), active: v.boolean() },
-  handler: async (ctx, { planId: pid, active }) => {
-    const user = await requireAdmin(ctx);
+const setPlanActiveArgs = { planId: v.id("subscriptionPlans"), active: v.boolean() };
+/** Applies an APPROVED setPlanActive change (called only by approvals.approvePricingChange). */
+export async function apply_setPlanActive(
+  ctx: MutationCtx,
+  { planId: pid, active }: ObjectType<typeof setPlanActiveArgs>,
+  user: Pick<Doc<"users">, "email">,
+) {
     const plan = await ctx.db.get(pid);
     if (!plan) throw new ConvexError("Plan not found");
     if (plan.active === active) return { ok: true, unchanged: true };
@@ -591,6 +645,13 @@ export const setPlanActive = mutation({
       details: `Plan "${plan.name}" ${active ? "enabled" : "disabled"}`,
     });
     return { ok: true };
+}
+/** Proposes a setPlanActive change — it takes effect only after a second, authorised approver approves it. */
+export const setPlanActive = mutation({
+  args: setPlanActiveArgs,
+  handler: async (ctx, args) => {
+    const user = await requireAdmin(ctx);
+    return await proposePricingChange(ctx, user, "setPlanActive", args);
   },
 });
 

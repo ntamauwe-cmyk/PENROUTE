@@ -3,7 +3,7 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getCurrentEmployer, getEmployerForUser } from "./employers";
-import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
+import { quoteForPostings } from "./pricing";
 import { applyPfaSeed, isSelectable } from "./pfaDirectory";
 import { bootstrapAdminEmails, requireSandboxMode, sandboxModeEnabled } from "./environment";
 import { notify } from "./notifications";
@@ -471,7 +471,9 @@ export const claimPlatformAdmin = mutation({
     if (users.some((u) => u.role === "admin")) {
       throw new ConvexError("Platform admin is already configured");
     }
-    await ctx.db.patch(user._id, { role: "admin" });
+    // The founding operator holds fee-approval authority (maker-checker:
+    // they can approve changes proposed by OTHER admins, never their own).
+    await ctx.db.patch(user._id, { role: "admin", pricingApprover: true });
     await ctx.db.insert("auditLogs", {
       actor: user.email,
       action: "platform_admin_bootstrapped",
@@ -647,54 +649,6 @@ export const seedDemoData = mutation({
     });
 
     return { seeded: true, employerId };
-  },
-});
-
-export const updateFeeConfig = mutation({
-  args: { perEmployeeFeeKobo: v.number() },
-  handler: async (ctx, { perEmployeeFeeKobo }) => {
-    const user = await getCurrentUser(ctx);
-    if (user?.role !== "admin") {
-      throw new ConvexError("Only platform admins can change pricing");
-    }
-    const row = await ctx.db
-      .query("systemConfig")
-      .withIndex("by_key", (q) => q.eq("key", "per_employee_fee_kobo"))
-      .first();
-    const now = Date.now();
-    if (row) {
-      await ctx.db.patch(row._id, {
-        value: perEmployeeFeeKobo,
-        updatedAt: now,
-        updatedBy: user.email ?? "admin",
-      });
-    } else {
-      await ctx.db.insert("systemConfig", {
-        key: "per_employee_fee_kobo",
-        value: perEmployeeFeeKobo,
-        updatedAt: now,
-        updatedBy: user.email ?? "admin",
-      });
-    }
-    // Keep the Fee Engine and the tiered pricing engine in lockstep — the
-    // saved rate must reach every quote/billing surface, not just this key.
-    const propagated = await applyFlatFeeToActiveTiers(
-      ctx,
-      perEmployeeFeeKobo,
-      user.email ?? "admin",
-    );
-    await ctx.db.insert("auditLogs", {
-      actor: user?.email ?? "admin",
-      action: "update_fee_config",
-      entityType: "systemConfig",
-      details:
-        `per-employee fee set to ${perEmployeeFeeKobo} kobo (previous: ${row?.value ?? "unset"})` +
-        (propagated.updated > 0
-          ? ` — applied to ${propagated.updated} active pricing tier${propagated.updated === 1 ? "" : "s"}`
-          : " — active tiers already carry this rate"),
-      createdAt: now,
-    });
-    return { ok: true, tiersUpdated: propagated.updated };
   },
 });
 

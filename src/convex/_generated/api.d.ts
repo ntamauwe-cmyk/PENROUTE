@@ -10,6 +10,8 @@
 
 import type * as adapters from "../adapters.js";
 import type * as admin from "../admin.js";
+import type * as approvalCore from "../approvalCore.js";
+import type * as approvals from "../approvals.js";
 import type * as auth from "../auth.js";
 import type * as auth_emailOtp from "../auth/emailOtp.js";
 import type * as billing from "../billing.js";
@@ -48,6 +50,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   adapters: typeof adapters;
   admin: typeof admin;
+  approvalCore: typeof approvalCore;
+  approvals: typeof approvals;
   auth: typeof auth;
   "auth/emailOtp": typeof auth_emailOtp;
   billing: typeof billing;

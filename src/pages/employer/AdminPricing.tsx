@@ -20,6 +20,7 @@ import { fmtDateTime, fmtNaira } from "@/lib/pension";
 import type { Id } from "@/convex/_generated/dataModel";
 import { CheckCircle2, Loader2, Plus, Receipt, Save, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { PricingApprovals } from "@/components/PricingApprovals";
 
 /**
  * ADMINISTRATOR-ONLY PRICING MANAGEMENT — processing-fee tiers, subscription
@@ -87,6 +88,8 @@ export default function AdminPricing() {
     return (
       <DashboardShell>
         <PageHeader title="Pricing" />
+
+      <PricingApprovals />
         <div className="pen-card p-8 text-center text-sm text-muted-foreground">
           Administrator access is required to manage pricing.
         </div>
@@ -114,8 +117,14 @@ export default function AdminPricing() {
   const run = async (fn: () => Promise<unknown>, okMsg: string) => {
     setBusy(true);
     try {
-      await fn();
-      toast.success(okMsg);
+      const res = await fn();
+      if (res && typeof res === "object" && "pending" in res) {
+        toast.success("Submitted for approval", {
+          description: `${okMsg.replace(/\.$/, "")} — takes effect once another administrator with fee-approval authority approves it.`,
+        });
+      } else {
+        toast.success(okMsg);
+      }
     } catch (e) {
       toast.error(friendlyError(e, "Action failed"));
     } finally {

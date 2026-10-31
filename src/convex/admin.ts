@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
+import { proposePricingChange } from "./approvalCore";
 import { getCurrentUser } from "./users";
 import { internal } from "./_generated/api";
 import { audit } from "./employers";
@@ -158,52 +159,60 @@ export const listAllExceptions = query({
   },
 });
 
-/** Update the per-employee processing fee (Fee Engine, spec §23). */
+/** Applies an APPROVED per-employee fee change (called only by approvals). */
+export async function apply_flatFee(
+  ctx: MutationCtx,
+  { perEmployeeFeeKobo }: { perEmployeeFeeKobo: number },
+  user: { email?: string },
+) {
+  if (!Number.isInteger(perEmployeeFeeKobo) || perEmployeeFeeKobo < 0 || perEmployeeFeeKobo > 10_000_000) {
+    throw new ConvexError("Invalid fee amount");
+  }
+  const row = await ctx.db
+    .query("systemConfig")
+    .withIndex("by_key", (q) => q.eq("key", "per_employee_fee_kobo"))
+    .first();
+  const now = Date.now();
+  if (row) {
+    await ctx.db.patch(row._id, { value: perEmployeeFeeKobo, updatedAt: now, updatedBy: user.email ?? "admin" });
+  } else {
+    await ctx.db.insert("systemConfig", {
+      key: "per_employee_fee_kobo",
+      value: perEmployeeFeeKobo,
+      updatedAt: now,
+      updatedBy: user.email ?? "admin",
+    });
+  }
+  // The Fee Engine must not be a display-only key: propagate the new rate
+  // to the live pricing tiers so quotes, billing, revenue reports and the
+  // public pricing page all show the price that was just approved.
+  const propagated = await applyFlatFeeToActiveTiers(ctx, perEmployeeFeeKobo, user.email ?? "admin");
+  await audit(ctx, {
+    actor: user.email ?? "admin",
+    action: "update_fee_config",
+    entityType: "systemConfig",
+    field: "per_employee_fee_kobo",
+    before: row ? String(row.value) : "unset",
+    after: String(perEmployeeFeeKobo),
+    details:
+      `per-employee fee set to ${perEmployeeFeeKobo} kobo (previous: ${row?.value ?? "unset"})` +
+      (propagated.updated > 0
+        ? ` — applied to ${propagated.updated} active pricing tier${propagated.updated === 1 ? "" : "s"}`
+        : " — active tiers already carry this rate"),
+  });
+  return { ok: true, tiersUpdated: propagated.updated };
+}
+
+/** PROPOSE a per-employee fee change. It takes effect only after a second,
+ *  authorised fee approver approves it (maker-checker). */
 export const adminUpdateFee = mutation({
   args: { perEmployeeFeeKobo: v.number() },
   handler: async (ctx, { perEmployeeFeeKobo }) => {
     const user = await requireAdmin(ctx);
-    if (!Number.isFinite(perEmployeeFeeKobo) || perEmployeeFeeKobo < 0) {
+    if (!Number.isInteger(perEmployeeFeeKobo) || perEmployeeFeeKobo < 0 || perEmployeeFeeKobo > 10_000_000) {
       throw new ConvexError("Invalid fee amount");
     }
-    const row = await ctx.db
-      .query("systemConfig")
-      .withIndex("by_key", (q) => q.eq("key", "per_employee_fee_kobo"))
-      .first();
-    const now = Date.now();
-    if (row) {
-      await ctx.db.patch(row._id, {
-        value: perEmployeeFeeKobo,
-        updatedAt: now,
-        updatedBy: user.email ?? "admin",
-      });
-    } else {
-      await ctx.db.insert("systemConfig", {
-        key: "per_employee_fee_kobo",
-        value: perEmployeeFeeKobo,
-        updatedAt: now,
-        updatedBy: user.email ?? "admin",
-      });
-    }
-    // The Fee Engine must not be a display-only key: propagate the new rate
-    // to the live pricing tiers so quotes, billing, revenue reports and the
-    // public pricing page all show the price that was just saved.
-    const propagated = await applyFlatFeeToActiveTiers(
-      ctx,
-      perEmployeeFeeKobo,
-      user.email ?? "admin",
-    );
-    await audit(ctx, {
-      actor: user.email ?? "admin",
-      action: "update_fee_config",
-      entityType: "systemConfig",
-      details:
-        `per-employee fee set to ${perEmployeeFeeKobo} kobo (previous: ${row?.value ?? "unset"})` +
-        (propagated.updated > 0
-          ? ` — applied to ${propagated.updated} active pricing tier${propagated.updated === 1 ? "" : "s"}`
-          : " — active tiers already carry this rate"),
-    });
-    return { ok: true, tiersUpdated: propagated.updated };
+    return await proposePricingChange(ctx, user, "flatFee", { perEmployeeFeeKobo });
   },
 });
 
@@ -446,14 +455,18 @@ export const adminListPfaIntegrations = query({
  * The account must already exist (the person has signed in once).
  */
 export const grantPlatformAdmin = internalMutation({
-  args: { email: v.string() },
-  handler: async (ctx, { email }) => {
+  args: { email: v.string(), pricingApprover: v.optional(v.boolean()) },
+  handler: async (ctx, { email, pricingApprover }) => {
     const norm = email.trim().toLowerCase();
     const users = await ctx.db.query("users").withIndex("email", (q) => q.eq("email", norm)).take(10);
     const user = users.find((u) => !u.isAnonymous);
     if (!user) throw new ConvexError(`No signed-up account for ${norm} — ask them to sign in once first`);
-    if (user.role === "admin") return { ok: true, unchanged: true };
-    await ctx.db.patch(user._id, { role: "admin", pfaId: undefined });
+    if (user.role === "admin" && pricingApprover === undefined) return { ok: true, unchanged: true };
+    await ctx.db.patch(user._id, {
+      role: "admin",
+      pfaId: undefined,
+      ...(pricingApprover !== undefined ? { pricingApprover } : {}),
+    });
     await audit(ctx, {
       actor: "operator-cli",
       action: "platform_admin_granted",
@@ -462,7 +475,7 @@ export const grantPlatformAdmin = internalMutation({
       field: "role",
       before: user.role ?? "(none)",
       after: "admin",
-      details: `${norm} granted platform admin from the operator CLI`,
+      details: `${norm} granted platform admin from the operator CLI${pricingApprover ? " with fee-approval authority" : ""}`,
     });
     return { ok: true };
   },
