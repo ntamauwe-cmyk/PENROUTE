@@ -18,7 +18,21 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Info, Landmark, Loader2, ShieldCheck, TriangleAlert, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { fmtNaira, monthName, statusLabel } from "@/lib/pension";
-import { prePaymentChecks, statutoryContribution } from "@/lib/compliance";
+import {
+  DEFAULT_SALARY_PAY_DAY,
+  prePaymentChecks,
+  remittanceDeadline,
+  salaryDate,
+  statutoryContribution,
+} from "@/lib/compliance";
+
+const fmtDay = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 import { LivePaymentPanel } from "@/components/LivePaymentPanel";
 
 interface Props {
@@ -65,6 +79,12 @@ export function ContributionWizard({ onDone }: Props) {
     | undefined;
 
   const roster = useQuery(api.contributions.getReadyEmployees, { year, month });
+  const compliance = useQuery(api.compliance.getComplianceRecord);
+  const payDay = compliance?.salaryPayDay ?? compliance?.assumedPayDay ?? DEFAULT_SALARY_PAY_DAY;
+  const periodStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const periodEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  const paidOn = salaryDate(year, month, payDay);
+  const deadline = remittanceDeadline(year, month, payDay);
   const pfasQuery = useQuery(api.pension.listPfas);
   const pfas = useMemo(() => pfasQuery ?? [], [pfasQuery]);
   const pfaCodeById = useMemo(() => new Map(pfas.map((p) => [p._id, p.code])), [pfas]);
@@ -466,6 +486,24 @@ export function ContributionWizard({ onDone }: Props) {
             </Button>
           </div>
 
+          {/* Period dates: start/end, salary date and statutory deadline */}
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            <div className="pen-inset p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#5A6B74]">Period</p>
+              <p className="mt-0.5 font-semibold text-[#0B1F2A]">
+                {fmtDay(periodStart)} – {fmtDay(periodEnd)}
+              </p>
+            </div>
+            <div className="pen-inset p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#5A6B74]">Salary paid</p>
+              <p className="mt-0.5 font-semibold text-[#0B1F2A]">{fmtDay(paidOn)}</p>
+            </div>
+            <div className="pen-inset p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#5A6B74]">Remit by (statutory)</p>
+              <p className="mt-0.5 font-semibold text-[#0B1F2A]">{fmtDay(deadline)}</p>
+            </div>
+          </div>
+
           {/* 02 · Employees — roster or CSV schedule upload */}
           <div className="pen-inset mt-5 p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -538,6 +576,9 @@ export function ContributionWizard({ onDone }: Props) {
               <h3 className="font-bold tracking-tight text-[#0B1F2A]">
                 Review — {monthName(month)} {year}
               </h3>
+              <p className="text-xs text-[#5A6B74]">
+                {fmtDay(periodStart)} – {fmtDay(periodEnd)} · remit by {fmtDay(deadline)}
+              </p>
               <p className="text-sm text-[#5A6B74]">
                 03 · Contributions per employee · 04 · PFA distribution · 05 · Summary
               </p>

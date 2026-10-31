@@ -15,18 +15,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { DashboardShell } from "@/components/DashboardShell";
 import { ClayTable, LoadingBlock, PageHeader } from "@/components/pension-ui";
 import { Landmark, Pencil, Plus, Search, UserX, UserCheck } from "lucide-react";
 import { toast } from "sonner";
+import { PfaPicker } from "@/components/PfaPicker";
 import { fmtNaira } from "@/lib/pension";
 import { statutoryContribution } from "@/lib/compliance";
 
@@ -171,30 +165,13 @@ export default function Employees() {
         </p>
       </div>
       <div>
-        <Label>PFA</Label>
-        <Select
+        <Label htmlFor="pfa-picker">PFA</Label>
+        <PfaPicker
+          id="pfa-picker"
+          pfas={pfas}
           value={form.pfaId}
-          onValueChange={(v) => setForm((f) => ({ ...f, pfaId: v }))}
-        >
-          <SelectTrigger className="mt-1.5 w-full cursor-pointer">
-            <SelectValue placeholder="Select PFA" />
-          </SelectTrigger>
-          <SelectContent>
-            {/* Inactive PFAs are not selectable for new/changed assignments,
-                except the employee's current (possibly deactivated) PFA. */}
-            {(pfas)
-              .filter(
-                (p) =>
-                  (p.active !== false && p.status !== "INACTIVE") || p._id === form.pfaId,
-              )
-              .map((p) => (
-                <SelectItem key={p._id} value={p._id}>
-                  {p.name} ({p.code})
-                  {p.active === false || p.status === "INACTIVE" ? " — inactive" : ""}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+          onChange={(v) => setForm((f) => ({ ...f, pfaId: v }))}
+        />
       </div>
     </div>
   );

@@ -88,7 +88,7 @@ export default function Batches() {
 
       {/* Certificate dialog */}
       <Dialog open={!!certBatchId} onOpenChange={(open) => !open && setCertBatchId(null)}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-auto">
+        <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Payment certificate</DialogTitle>
             <DialogDescription>
