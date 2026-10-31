@@ -22,6 +22,8 @@ import {
   Landmark,
   Plus,
   RefreshCw,
+  Maximize2,
+  Minimize2,
   TriangleAlert,
   Wallet,
 } from "lucide-react";
@@ -41,6 +43,7 @@ import {
 export default function Overview() {
   const { dash, employer, batches, loading, needsSeed } = useEmployer();
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardFull, setWizardFull] = useState(false);
   const [wizardTick, setWizardTick] = useState(0);
   const [receiptBatchId, setReceiptBatchId] = useState<Id<"contributionBatches"> | null>(null);
 
@@ -440,7 +443,22 @@ export default function Overview() {
 
       {/* ===== New payment wizard ===== */}
       <Dialog open={wizardOpen} onOpenChange={setWizardOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-auto">
+        <DialogContent
+          className={
+            wizardFull
+              ? "h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-auto sm:max-w-[calc(100vw-1rem)]"
+              : "max-h-[90vh] overflow-auto sm:max-w-4xl"
+          }
+        >
+          <button
+            type="button"
+            onClick={() => setWizardFull((f) => !f)}
+            aria-label={wizardFull ? "Exit full window" : "Open in full window"}
+            title={wizardFull ? "Exit full window" : "Full window"}
+            className="absolute top-4 right-12 rounded-xs opacity-70 transition-opacity hover:opacity-100"
+          >
+            {wizardFull ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+          </button>
           <DialogHeader>
             <DialogTitle className="text-[#0B1F2A]">New Pension Payment</DialogTitle>
             <DialogDescription>
@@ -460,7 +478,7 @@ export default function Overview() {
 
       {/* ===== Receipt dialog ===== */}
       <Dialog open={!!receiptBatchId} onOpenChange={(open) => !open && setReceiptBatchId(null)}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-auto">
+        <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="text-[#0B1F2A]">Payment Receipt</DialogTitle>
             <DialogDescription>
