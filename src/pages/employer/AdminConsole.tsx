@@ -7,19 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DashboardShell } from "@/components/DashboardShell";
 import { ClayTable, LoadingBlock, PageHeader, StatTile, StatusPill } from "@/components/pension-ui";
 import { fmtDateTime, fmtNaira } from "@/lib/pension";
 import type { Id } from "@/convex/_generated/dataModel";
 import { SettlementConfirmations } from "@/components/SettlementConfirmations";
 import { KybDocumentsReview } from "@/components/KybDocuments";
+import { PfaPicker } from "@/components/PfaPicker";
 import {
   CheckCircle2,
   Database,
@@ -406,21 +400,7 @@ function AdminConsoleBody() {
               </div>
               <div className="w-64">
                 <Label>PFA</Label>
-                <Select value={pfaOperatorPfaId} onValueChange={setPfaOperatorPfaId}>
-                  <SelectTrigger className="mt-1.5 w-full">
-                    <SelectValue placeholder="Select a PFA…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(allPfas ?? [])
-                      .filter((p) => p.active !== false && p.status !== "INACTIVE")
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map((p) => (
-                        <SelectItem key={p._id} value={p._id}>
-                          {p.name} ({p.code})
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <PfaPicker pfas={allPfas ?? []} value={pfaOperatorPfaId} onChange={setPfaOperatorPfaId} />
               </div>
               <Button
                 className="font-semibold"
