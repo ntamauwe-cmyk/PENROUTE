@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,6 +18,8 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { ClayTable, LoadingBlock, PageHeader, StatTile, StatusPill } from "@/components/pension-ui";
 import { fmtDateTime, fmtNaira } from "@/lib/pension";
 import type { Id } from "@/convex/_generated/dataModel";
+import { SettlementConfirmations } from "@/components/SettlementConfirmations";
+import { KybDocumentsReview } from "@/components/KybDocuments";
 import {
   CheckCircle2,
   Database,
@@ -52,7 +55,7 @@ export default function AdminConsole() {
       await claimAdmin({});
       toast.success("Platform admin assigned — welcome aboard");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not claim platform admin");
+      toast.error(friendlyError(e, "Could not claim platform admin"));
     } finally {
       setClaiming(false);
     }
@@ -158,7 +161,7 @@ function AdminConsoleBody() {
       await refreshRail();
       toast.success(`Payment rail switched to ${mode.toUpperCase()}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not switch rail");
+      toast.error(friendlyError(e, "Could not switch rail"));
     } finally {
       setBusy(false);
     }
@@ -188,7 +191,7 @@ function AdminConsoleBody() {
       );
       setPfaOperatorEmail("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not grant access");
+      toast.error(friendlyError(e, "Could not grant access"));
     } finally {
       setGrantBusy(false);
     }
@@ -207,13 +210,16 @@ function AdminConsoleBody() {
         `Fee updated to ₦${(n / 100).toFixed(0)} per employee — applied to every active pricing tier`,
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(friendlyError(e, "Update failed"));
     } finally {
       setBusy(false);
     }
   };
 
-  const effectiveMode = rail?.mode ?? overview?.railMode ?? "sandbox";
+  // The PLATFORM rail comes from the database (what payBatch actually uses).
+  // railStatus only describes the configured Paystack key (test vs live).
+  const effectiveMode = overview?.railMode ?? "not_configured";
+  const sandboxDeployment = overview?.sandboxDeployment ?? false;
 
   return (
     <DashboardShell>
@@ -228,12 +234,12 @@ function AdminConsoleBody() {
         <>
           {/* Platform stats */}
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <StatTile label="Employers" value={String(overview.employersCount)} />
-            <StatTile label="Batches" value={String(overview.batchesCount)} />
+            <StatTile label="Employers" value={`${overview.employersCount.toLocaleString()}${overview.capped.employers ? "+" : ""}`} />
+            <StatTile label="Batches" value={`${overview.batchesCount.toLocaleString()}${overview.capped.batches ? "+" : ""}`} />
             <StatTile label="Open exceptions" value={String(overview.openExceptions)} />
             <StatTile label="Pension processed" value={fmtNaira(overview.totalPension, { compact: true })} />
             <StatTile label="Platform revenue" value={fmtNaira(overview.totalFees, { compact: true })} />
-            <StatTile label="Ledger rows" value={String(overview.ledgerCount)} />
+            <StatTile label="Ledger rows" value={`${overview.ledgerCount.toLocaleString()}${overview.capped.ledger ? "+" : ""}`} />
           </section>
 
           {/* PFA statistics — real database values */}
@@ -271,8 +277,10 @@ function AdminConsoleBody() {
                   <KeyRound className="size-5 text-primary" /> Payment rail
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Switch collection between the clearly-labelled sandbox rail and the live Paystack
-                  rail — no code changes. The ledger only records after the provider verifies payment.
+                  {sandboxDeployment
+                    ? "Sandbox deployment: switch between the clearly-labelled simulated rail and Paystack."
+                    : "Production deployment: contributions can only be paid through Paystack. The simulated sandbox rail is disabled."}{" "}
+                  The ledger only records after the provider verifies payment.
                 </p>
               </div>
               <Badge
@@ -282,7 +290,11 @@ function AdminConsoleBody() {
                     : "bg-[#FBF3E0] text-[#7A5A10]"
                 }
               >
-                {effectiveMode === "live" ? "LIVE (Paystack)" : "SANDBOX (test rail)"}
+                {effectiveMode === "live"
+                  ? `LIVE (Paystack${rail?.mode === "sandbox" ? " test key" : ""})`
+                  : effectiveMode === "sandbox"
+                    ? "SANDBOX (test rail)"
+                    : "NOT CONFIGURED — payments disabled"}
               </Badge>
             </div>
 
@@ -304,7 +316,8 @@ function AdminConsoleBody() {
                   {rail.configured ? (
                     <>
                       <CheckCircle2 className="size-4 text-[#007A4D]" />
-                      Paystack key detected — ready for live mode
+                      Paystack {rail.mode === "live" ? "LIVE" : "TEST"} key detected
+                      {rail.mode !== "live" && " — real money is not collected with a test key"}
                     </>
                   ) : (
                     <>
@@ -317,13 +330,15 @@ function AdminConsoleBody() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                variant={effectiveMode === "sandbox" ? "default" : "outline"}
-                onClick={() => flipRail("sandbox")}
-                disabled={busy || effectiveMode === "sandbox"}
-              >
-                Use sandbox rail
-              </Button>
+              {sandboxDeployment && (
+                <Button
+                  variant={effectiveMode === "sandbox" ? "default" : "outline"}
+                  onClick={() => flipRail("sandbox")}
+                  disabled={busy || effectiveMode === "sandbox"}
+                >
+                  Use sandbox rail
+                </Button>
+              )}
               <Button
                 variant={effectiveMode === "live" ? "default" : "outline"}
                 onClick={() => flipRail("live")}
@@ -333,6 +348,9 @@ function AdminConsoleBody() {
               </Button>
             </div>
           </section>
+
+          {/* Manual settlement confirmation (PFAs without live API integration) */}
+          <SettlementConfirmations scope="admin" />
 
           {/* PLUG-AND-PLAY: PFA live integrations */}
           <section className="pen-card-lg p-6">
@@ -484,7 +502,7 @@ function AdminConsoleBody() {
                                   toast.success(`Invitation revoked for ${row.email}`);
                                 }
                               } catch (err) {
-                                toast.error(err instanceof Error ? err.message : "Update failed");
+                                toast.error(friendlyError(err, "Update failed"));
                               }
                             }}
                           >
@@ -547,6 +565,16 @@ function AdminConsoleBody() {
                     <td className="px-3 py-2.5">
                       <p className="font-medium">{e.name}</p>
                       <p className="text-xs text-muted-foreground">{e.contactEmail}</p>
+                      <p className="text-xs text-muted-foreground">
+                        TIN {e.tin} · {e.representativeName} · {e.contactPhone}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{e.registeredAddress}</p>
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs font-semibold text-[#007A4D]">
+                          KYB documents
+                        </summary>
+                        <KybDocumentsReview employerId={e._id} />
+                      </details>
                     </td>
                     <td className="px-3 py-2.5 font-mono text-xs">{e.rcNumber}</td>
                     <td className="px-3 py-2.5 tabular-nums">{e.employees}</td>
@@ -577,13 +605,19 @@ function AdminConsoleBody() {
                               employerId: e._id,
                               status: e.status === "active" ? "suspended" : "active",
                             });
-                            toast.success(`${e.name} ${e.status === "active" ? "suspended" : "reactivated"}`);
+                            toast.success(
+                              `${e.name} ${e.status === "active" ? "suspended" : e.status === "pending" || e.status === "under_review" ? "approved" : "reactivated"}`,
+                            );
                           } catch (err) {
-                            toast.error(err instanceof Error ? err.message : "Update failed");
+                            toast.error(friendlyError(err, "Update failed"));
                           }
                         }}
                       >
-                        {e.status === "active" ? "Suspend" : "Reactivate"}
+                        {e.status === "active"
+                          ? "Suspend"
+                          : e.status === "pending" || e.status === "under_review"
+                            ? "Approve"
+                            : "Reactivate"}
                       </Button>
                     </td>
                   </tr>
@@ -718,7 +752,7 @@ function PfaIntegrationRow({
       setOpen(false);
       toast.success(`${pfa.name} integration updated`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(friendlyError(e, "Update failed"));
     } finally {
       setBusy(false);
     }
@@ -735,7 +769,7 @@ function PfaIntegrationRow({
           : (res.reason ?? `Endpoint test failed${res.httpStatus ? ` (HTTP ${res.httpStatus})` : ""}`),
       );
     } catch (e) {
-      setTestResult(e instanceof Error ? e.message : "Connection test failed");
+      setTestResult(friendlyError(e, "Connection test failed"));
     } finally {
       setTesting(false);
     }
@@ -846,7 +880,7 @@ function PfaIntegrationRow({
                     await onClear();
                     toast.success("Stored secrets cleared");
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Failed");
+                    toast.error(friendlyError(e, "Failed"));
                   }
                 }}
               >

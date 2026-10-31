@@ -21,7 +21,7 @@
  */
 "use node";
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 
@@ -200,21 +200,31 @@ export const confirmLivePayment = action({
   args: { batchId: v.id("contributionBatches") },
   handler: async (ctx, { batchId }): Promise<ConfirmResult> => {
     const context = await ctx.runQuery(api.engine.getLivePaymentContext, { batchId });
-    if (!context) throw new Error("No authorized pending payment for this batch");
+    if (!context) throw new ConvexError("No authorized pending payment for this batch");
     const payment = await ctx.runQuery(internal.engine.getPaymentByRef, {
       paymentRef: context.paymentRef,
     });
     if (!payment || payment.batchId !== batchId || payment.status === "successful") {
       if (payment?.status === "successful") return { ok: true as const, outcome: "success" as const, alreadyProcessed: true };
-      throw new Error("Pending payment record not found");
+      throw new ConvexError("Pending payment record not found");
     }
     if (payment.rail !== "paystack" || payment.amount !== context.expectedKobo) {
-      throw new Error("Stored payment details do not match the checkout context");
+      throw new ConvexError("Stored payment details do not match the checkout context");
     }
     const verified = await ctx.runAction(api.payments.verifyLivePayment, {
       paymentRef: payment.paymentRef,
     });
-    if (!verified.ok) throw new Error(verified.reason ?? "Paystack verification failed");
+    if (!verified.ok) throw new ConvexError(verified.reason ?? "Paystack verification failed");
+    if (verified.outcome === "failed") {
+      // Terminal decline reported by Paystack itself — recorded server-side.
+      // ("abandoned"/"ongoing"/"pending" mean the checkout is unfinished: the
+      // payment stays open so the employer can still complete it.)
+      await ctx.runMutation(internal.engine.markLivePaymentFailedSystem, {
+        paymentId: payment._id,
+        reason: "Paystack reports the payment failed (verified)",
+      });
+      return { ok: true as const, outcome: verified.outcome };
+    }
     if (verified.outcome !== "success") {
       return { ok: true as const, outcome: verified.outcome };
     }
@@ -227,7 +237,7 @@ export const confirmLivePayment = action({
         paymentId: payment._id,
         reason: "Paystack verification reference, exact amount, or currency mismatch",
       });
-      throw new Error("Payment details do not match the expected amount, currency, or reference");
+      throw new ConvexError("Payment details do not match the expected amount, currency, or reference");
     }
     await ctx.runMutation(internal.engine.finalizeLivePaymentSystem, {
       paymentId: payment._id,
@@ -252,9 +262,9 @@ export const logRailCall = action({
   },
   handler: async (ctx, args) => {
     const caller = await ctx.runQuery(api.users.currentUser, {});
-    if (!caller) throw new Error("Authentication required");
+    if (!caller) throw new ConvexError("Authentication required");
     const batch = await ctx.runQuery(api.pension.getBatchDetail, { batchId: args.batchId });
-    if (!batch) throw new Error("Not authorized to log activity for this batch");
+    if (!batch) throw new ConvexError("Not authorized to log activity for this batch");
     await ctx.runMutation(internal.pension.internalAudit, {
       actor: caller.email ?? "unknown",
       action: "integration_log",

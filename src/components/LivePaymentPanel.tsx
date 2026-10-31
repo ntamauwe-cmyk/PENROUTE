@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { friendlyError } from "@/lib/errors";
+import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,6 @@ export function LivePaymentPanel({
 }) {
   const initialize = useAction(api.payments.initializeLivePayment);
   const confirm = useAction(api.payments.confirmLivePayment);
-  const markFailed = useMutation(api.engine.markLivePaymentFailed);
   const context = useQuery(api.engine.getLivePaymentContext, { batchId });
 
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -55,13 +55,13 @@ export function LivePaymentPanel({
         toast.error(res.reason ?? "Could not start the payment");
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Payment initialization failed");
+      toast.error(friendlyError(e, "Payment initialization failed"));
     } finally {
       setStarting(false);
     }
   };
 
-  const checkPayment = async () => {
+  const checkPayment = async (silent = false) => {
     if (!paymentRef) return;
     setChecking(true);
     try {
@@ -69,14 +69,17 @@ export function LivePaymentPanel({
       if (res.outcome === "success") {
         toast.success("Payment verified — processing contributions");
         onPaid();
-      } else if (res.outcome === "failed" || res.outcome === "abandoned") {
-        await markFailed({ batchId, reason: `Paystack reports ${res.outcome}` });
-        toast.error(`Payment ${res.outcome} — exception recorded`);
-      } else {
+      } else if (res.outcome === "failed") {
+        // Recorded server-side by confirmLivePayment after Paystack verification.
+        toast.error("Paystack declined this payment", {
+          description: "No funds were taken. You can start a new payment from the dashboard.",
+        });
+        setCheckoutUrl(null);
+      } else if (!silent) {
         toast.info("Payment not completed yet — finish in the Paystack window and try again.");
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Verification failed");
+      if (!silent) toast.error(friendlyError(e, "Verification failed"));
     } finally {
       setChecking(false);
     }
@@ -86,7 +89,7 @@ export function LivePaymentPanel({
   useEffect(() => {
     if (!checkoutUrl) return;
     const t = setInterval(() => {
-      if (!checking) void checkPayment();
+      if (!checking) void checkPayment(true);
     }, 6000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,7 +118,7 @@ export function LivePaymentPanel({
             <Button variant="outline" onClick={() => window.open(checkoutUrl, "_blank", "noopener")}>
               <ExternalLink className="size-4" /> Reopen payment window
             </Button>
-            <Button className="font-semibold" onClick={checkPayment} disabled={checking}>
+            <Button className="font-semibold" onClick={() => void checkPayment()} disabled={checking}>
               {checking ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
               I've completed payment
             </Button>

@@ -1,4 +1,5 @@
 import { api } from "@/convex/_generated/api";
+import { friendlyError } from "@/lib/errors";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +27,8 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 
 import { toast } from "sonner";
+import { KybDocumentsUpload } from "@/components/KybDocuments";
+import { SalaryPayDaySetting } from "@/components/Compliance";
 
 export default function Settings() {
   const { employer, loading } = useEmployer();
@@ -49,7 +52,7 @@ export default function Settings() {
 
       {!employer ? (
         <div className="pen-card p-8 text-center text-sm text-muted-foreground">
-          No employer profile yet — load the demo workspace from the Dashboard.
+          No employer profile yet — register your company from the Dashboard.
         </div>
       ) : (
         <section className="pen-card-lg p-6">
@@ -60,7 +63,10 @@ export default function Settings() {
             <div>
               <h2 className="font-bold tracking-tight">{employer.name}</h2>
               <p className="text-xs text-muted-foreground">
-                Employer profile · verified against KYC requirements
+                Employer profile ·{" "}
+                {employer.kycStatus === "verified"
+                  ? "KYB verified by Penroute"
+                  : "KYB review pending — upload your documents below"}
               </p>
             </div>
             <Badge
@@ -100,6 +106,9 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      {employer && <KybDocumentsUpload />}
+      {employer && <SalaryPayDaySetting />}
 
       {/* Payroll/HR API integration (spec §4) */}
       <PayrollIntegrationCard keyStatus={keyStatus ?? null} hasEmployer={Boolean(employer)} />
@@ -212,7 +221,7 @@ function GitHubSyncCard() {
       const res = await verify({ owner, repo });
       setVerifyResult(res);
     } catch (e) {
-      setVerifyResult({ ok: false, reason: e instanceof Error ? e.message : "Verification failed" });
+      setVerifyResult({ ok: false, reason: friendlyError(e, "Verification failed") });
     } finally {
       setVerifying(false);
     }
@@ -245,7 +254,7 @@ function GitHubSyncCard() {
         toast.error(res.error);
       }
     } catch (e) {
-      setPushResult({ ok: false, error: e instanceof Error ? e.message : "Push failed" });
+      setPushResult({ ok: false, error: friendlyError(e, "Push failed") });
       toast.error("Push failed");
     } finally {
       setStaging(false);
@@ -389,7 +398,7 @@ function PayrollIntegrationCard({
       setShowKey(true);
       toast.success("API key generated — copy it now, it won't be shown again");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not generate key");
+      toast.error(friendlyError(e, "Could not generate key"));
     } finally {
       setBusy(null);
     }
@@ -403,7 +412,7 @@ function PayrollIntegrationCard({
       setGeneratedKey(null);
       toast.success("API key revoked");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not revoke key");
+      toast.error(friendlyError(e, "Could not revoke key"));
     } finally {
       setBusy(null);
     }

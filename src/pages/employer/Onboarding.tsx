@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -7,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { DashboardShell } from "@/components/DashboardShell";
 import { PageHeader } from "@/components/pension-ui";
 import { Building2, CheckCircle2 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
 
 /**
  * Self-service employer onboarding (spec §4) — plug-and-play multi-tenancy.
@@ -20,8 +22,11 @@ export default function Onboarding() {
   const seed = useMutation(api.pension.seedDemoData);
   const claim = useMutation(api.pension.claimDemoEmployer);
   const dash = useQuery(api.pension.getEmployerDashboard);
+  const deployment = useQuery(api.pension.deploymentInfo);
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
+  const [accepted, setAccepted] = useState(false);
   const [form, setForm] = useState({
     name: "",
     rcNumber: "",
@@ -37,15 +42,19 @@ export default function Onboarding() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!accepted) {
+      toast.error("Please accept the Terms of Service and Privacy Notice");
+      return;
+    }
     setSaving(true);
     try {
-      await register(form);
-      toast.success("Workspace created", {
-        description: `${form.name} is ready — add employees, then make your first contribution.`,
+      await register({ ...form, acceptTerms: true });
+      toast.success("Registration submitted", {
+        description: `${form.name} is under review. Add your employees now — payments open once Penroute approves your account.`,
       });
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Registration failed");
+      toast.error(friendlyError(err, "Registration failed"));
     } finally {
       setSaving(false);
     }
@@ -61,7 +70,7 @@ export default function Onboarding() {
       await claim({});
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not load demo data");
+      toast.error(friendlyError(err, "Could not load demo data"));
     } finally {
       setSaving(false);
     }
@@ -124,11 +133,32 @@ export default function Onboarding() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Button type="submit" className="font-semibold" disabled={saving}>
+        <label className="mt-6 flex items-start gap-2 text-sm text-[#5A6B74]">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-[#007A4D]"
+            checked={accepted}
+            onChange={(e) => setAccepted(e.target.checked)}
+            required
+          />
+          <span>
+            I am authorised to register this company and I accept the{" "}
+            <Link to="/terms" target="_blank" className="font-semibold text-[#007A4D] hover:underline">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link to="/privacy" target="_blank" className="font-semibold text-[#007A4D] hover:underline">
+              Privacy Notice
+            </Link>
+            .
+          </span>
+        </label>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button type="submit" className="font-semibold" disabled={saving || !accepted}>
             {saving ? "Creating workspace…" : "Create workspace"}
           </Button>
-          {!hasWorkspace && (
+          {!hasWorkspace && deployment?.sandboxMode && user?.role === "admin" && (
             <Button type="button" variant="outline" onClick={loadDemo} disabled={saving}>
               Or load the demo workspace
             </Button>

@@ -1,5 +1,5 @@
 import { internalMutation, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -132,8 +132,8 @@ export const testAdapters = mutation({
     // Admin-only debug helper: never let arbitrary (or anonymous) callers
     // exercise adapters or forge rows in the integration log.
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
-    if (user.role !== "admin") throw new Error("Admin access required");
+    if (!user) throw new ConvexError("Not authenticated");
+    if (user.role !== "admin") throw new ConvexError("Admin access required");
     const pinResult = pencomValidatePensionPinSandbox(args.pin, args.pfaCode);
     const railResult = settlementRailSandboxSubmit("TEST-" + Date.now(), args.amountKobo);
     const ackResult = pfaAcknowledgeSandbox();

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -14,9 +15,10 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Landmark, Loader2, ShieldCheck, Upload } from "lucide-react";
+import { Info, Landmark, Loader2, ShieldCheck, TriangleAlert, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { fmtNaira, monthName, statusLabel } from "@/lib/pension";
+import { prePaymentChecks, statutoryContribution } from "@/lib/compliance";
 import { LivePaymentPanel } from "@/components/LivePaymentPanel";
 
 interface Props {
@@ -54,6 +56,7 @@ export function ContributionWizard({ onDone }: Props) {
     | {
         batch: {
           status: string;
+          paymentStatus: string;
           settlementStatus: string;
           pfaStatus: string;
           reconciliationStatus: string;
@@ -121,13 +124,11 @@ export function ContributionWizard({ onDone }: Props) {
       });
       if (rows.length === 0) throw new Error("No employee rows found in the file.");
       setUploadedRows(rows);
-      setAmounts(
-        Object.fromEntries(rows.map((r) => [r.employeeCode, { employee: r.employeeContribution, employer: r.employerContribution }])),
-      );
+      setAmounts({});
       toast.success(`Schedule loaded — ${rows.length} employees from CSV`);
     } catch (e) {
       setUploadedRows(null);
-      setUploadError(e instanceof Error ? e.message : "Could not read the file");
+      setUploadError(friendlyError(e, "Could not read the file"));
     }
   };
 
@@ -147,25 +148,78 @@ export function ContributionWizard({ onDone }: Props) {
     setAmounts({});
   };
 
-  const amountFor = (code: string) => amounts[code] ?? { employee: 25000, employer: 25000 };
-
-  const prepared: {
+  // ---- Contribution amounts: NEVER a placeholder. Each row's default is,
+  // in order: the uploaded file → this period's existing batch → the
+  // statutory 8% / 10% of the employee's monthly emoluments → the amount
+  // paid last month. Rows with none of these must be entered by hand.
+  type Row = {
+    key: string;
     fullName: string;
     employeeCode: string;
     pensionPin: string;
     pfaCode: string;
-    employeeContribution: number;
-    employerContribution: number;
-  }[] = uploadedRows
-    ? uploadedRows
-    : employees.map((e) => ({
+    pfaName: string;
+    emolumentKobo: number | null;
+    defaultEmployee: number; // naira
+    defaultEmployer: number;
+    source: "file" | "existing" | "statutory" | "last_month" | "none";
+  };
+  const previous = useQuery(api.compliance.getPreviousSchedule, { year, month });
+  const prevByPin = useMemo(
+    () => new Map((previous?.rows ?? []).map((r) => [r.pensionPin, r])),
+    [previous],
+  );
+  const rows: Row[] = useMemo(() => {
+    const pfaNameByCode = new Map(pfas.map((p) => [p.code, p.name]));
+    if (uploadedRows) {
+      return uploadedRows.map((r, i) => ({
+        key: `${r.pensionPin}-${i}`,
+        fullName: r.fullName,
+        employeeCode: r.employeeCode,
+        pensionPin: r.pensionPin.toUpperCase().replace(/\s/g, ""),
+        pfaCode: r.pfaCode,
+        pfaName: pfaNameByCode.get(r.pfaCode) ?? `Unknown PFA (${r.pfaCode})`,
+        emolumentKobo: null,
+        defaultEmployee: r.employeeContribution,
+        defaultEmployer: r.employerContribution,
+        source: "file" as const,
+      }));
+    }
+    return employees.map((e) => {
+      const base = {
+        key: e._id as string,
         fullName: e.fullName,
         employeeCode: e.employeeCode,
         pensionPin: e.pensionPin,
         pfaCode: pfaCodeById.get(e.pfaId) ?? "",
-        employeeContribution: amountFor(e.employeeCode).employee,
-        employerContribution: amountFor(e.employeeCode).employer,
-      }));
+        pfaName: pfaNameById.get(e.pfaId) ?? "PFA",
+        emolumentKobo: e.monthlyEmolumentKobo ?? null,
+      };
+      if (e.record) {
+        return { ...base, defaultEmployee: e.record.employeeContribution / 100, defaultEmployer: e.record.employerContribution / 100, source: "existing" as const };
+      }
+      if (e.monthlyEmolumentKobo) {
+        const st = statutoryContribution(e.monthlyEmolumentKobo);
+        return { ...base, defaultEmployee: st.employeeKobo / 100, defaultEmployer: st.employerKobo / 100, source: "statutory" as const };
+      }
+      const last = prevByPin.get(e.pensionPin);
+      if (last) {
+        return { ...base, defaultEmployee: last.employeeKobo / 100, defaultEmployer: last.employerKobo / 100, source: "last_month" as const };
+      }
+      return { ...base, defaultEmployee: 0, defaultEmployer: 0, source: "none" as const };
+    });
+  }, [uploadedRows, employees, pfas, pfaCodeById, pfaNameById, prevByPin]);
+
+  const amountFor = (r: Row) => amounts[r.key] ?? { employee: r.defaultEmployee, employer: r.defaultEmployer };
+
+  const prepared = rows.map((r) => ({
+    fullName: r.fullName,
+    employeeCode: r.employeeCode,
+    pensionPin: r.pensionPin,
+    pfaCode: r.pfaCode,
+    employeeContribution: amountFor(r).employee,
+    employerContribution: amountFor(r).employer,
+  }));
   const totalRecords = prepared.length;
   const employeeSumN = prepared.reduce((s, r) => s + r.employeeContribution, 0);
   const employerSumN = prepared.reduce((s, r) => s + r.employerContribution, 0);
@@ -175,19 +229,39 @@ export function ContributionWizard({ onDone }: Props) {
   const feePerEmployeeN = (feeQuote?.feePerPostingKobo ?? 0) / 100;
   const feeN = totalRecords * feePerEmployeeN;
 
-  // PFA distribution preview (step 04) — computed from the validated roster
+  // Pre-payment checks against the statutory minimums and last month.
+  const findings = useMemo(
+    () =>
+      prePaymentChecks(
+        rows.map((r) => ({
+          key: r.key,
+          fullName: r.fullName,
+          pensionPin: r.pensionPin,
+          pfaCode: r.pfaCode,
+          employeeKobo: Math.round(amountFor(r).employee * 100),
+          employerKobo: Math.round(amountFor(r).employer * 100),
+          emolumentKobo: r.emolumentKobo,
+        })),
+        previous?.rows ?? null,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, amounts, previous],
+  );
+  const blocking = findings.filter((f) => f.level === "block");
+
+  // PFA distribution preview (step 04) — from the rows actually being paid.
   const pfaDist = useMemo(() => {
-    const map = new Map<Id<"pfas">, { name: string; count: number; total: number }>();
-    for (const e of employees) {
-      const a = amountFor(e.employeeCode);
-      const g = map.get(e.pfaId) ?? { name: pfaNameById.get(e.pfaId) ?? "PFA", count: 0, total: 0 };
+    const map = new Map<string, { name: string; count: number; total: number }>();
+    for (const r of rows) {
+      const a = amountFor(r);
+      const g = map.get(r.pfaCode) ?? { name: r.pfaName, count: 0, total: 0 };
       g.count += 1;
       g.total += a.employee + a.employer;
-      map.set(e.pfaId, g);
+      map.set(r.pfaCode, g);
     }
     return [...map.entries()];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employees, amounts, pfaNameById]);
+  }, [rows, amounts]);
 
   const prepare = useMutation(api.engine.prepareBatch);
   const pay = useMutation(api.engine.payBatch);
@@ -229,7 +303,7 @@ export function ContributionWizard({ onDone }: Props) {
       setFinishedBatchId(bId);
       onDone(bId);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Payment failed";
+      const msg = friendlyError(e, "Payment failed");
       toast.error(msg);
       if (msg.includes("not payable")) {
         setStep("period");
@@ -256,15 +330,13 @@ export function ContributionWizard({ onDone }: Props) {
           } catch {
             /* pipeline can also be resumed from the dashboard */
           }
-          if (dispatched) {
-            toast.info("Payment verified — contributions are being delivered to the PFAs", {
-              description: "This page updates live as each PFA acknowledges and posts.",
-            });
-          } else {
-            toast.success("Pension payment completed", {
-              description: `${monthName(month)} ${year} · ${totalRecords} employees · reconciled & posted`,
-            });
-          }
+          // Payment is verified; settlement, PFA posting and reconciliation are
+          // separate stages that confirm on their own — never claim them here.
+          toast.success("Payment verified by Paystack", {
+            description: dispatched
+              ? "Contributions are being delivered to the PFAs — this page updates live."
+              : `${monthName(month)} ${year} · ${totalRecords} employees · processing`,
+          });
           setStep("done");
           setFinishedBatchId(checkout.batchId);
           onDone(checkout.batchId);
@@ -295,7 +367,7 @@ export function ContributionWizard({ onDone }: Props) {
         {b && (
           <div className="mx-auto mt-4 flex max-w-md flex-wrap justify-center gap-2">
             <Badge variant="outline" className="font-medium">
-              Payment: {statusLabel("successful")}
+              Payment: {statusLabel(b.paymentStatus)}
             </Badge>
             <Badge variant="outline" className="font-medium">
               Settlement: {statusLabel(b.settlementStatus)}
@@ -529,43 +601,52 @@ export function ContributionWizard({ onDone }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {employees.map((e) => {
-                  const a = amountFor(e.employeeCode);
+                {rows.map((r) => {
+                  const a = amountFor(r);
+                  const hint =
+                    r.source === "statutory" && r.emolumentKobo
+                      ? `8% / 10% of ${fmtNaira(r.emolumentKobo, { noKobo: true })}`
+                      : r.source === "last_month"
+                        ? `Same as ${previous?.period ?? "last month"}`
+                        : r.source === "existing"
+                          ? "From this period's schedule"
+                          : r.source === "file"
+                            ? "From uploaded file"
+                            : "Enter amounts";
+                  const setPart = (part: "employee" | "employer", value: number) =>
+                    setAmounts((p) => ({ ...p, [r.key]: { ...a, [part]: value } }));
                   return (
-                    <tr key={e._id} className="border-t border-[#EDF0F2]">
-                      <td className="px-2 py-2 font-medium text-[#0B1F2A]">{e.fullName}</td>
-                      <td className="px-2 py-2 tabular-nums text-[#5A6B74]">{e.pensionPin}</td>
-                      <td className="hidden px-2 py-2 text-[#5A6B74] sm:table-cell">
-                        {pfaNameById.get(e.pfaId) ?? "—"}
+                    <tr key={r.key} className="border-t border-[#EDF0F2]">
+                      <td className="px-2 py-2">
+                        <p className="font-medium text-[#0B1F2A]">{r.fullName}</p>
+                        <p className={`text-[11px] ${r.source === "none" ? "font-semibold text-[#C4453C]" : "text-[#8299A5]"}`}>
+                          {hint}
+                        </p>
                       </td>
+                      <td className="px-2 py-2 tabular-nums text-[#5A6B74]">{r.pensionPin}</td>
+                      <td className="hidden px-2 py-2 text-[#5A6B74] sm:table-cell">{r.pfaName}</td>
                       <td className="px-2 py-1 text-right">
                         <Input
                           type="number"
+                          aria-label={`Employee contribution for ${r.fullName}`}
                           className="ml-auto h-8 w-28 text-right tabular-nums"
                           value={a.employee}
                           min={0}
+                          step="0.01"
                           disabled={paying}
-                          onChange={(ev) =>
-                            setAmounts((p) => ({
-                              ...p,
-                              [e.employeeCode]: { ...a, employee: Number(ev.target.value) || 0 },
-                            }))
-                          }
+                          onChange={(ev) => setPart("employee", Math.max(0, Number(ev.target.value) || 0))}
                         />
                       </td>
                       <td className="px-2 py-1 text-right">
                         <Input
                           type="number"
+                          aria-label={`Employer contribution for ${r.fullName}`}
                           className="ml-auto h-8 w-28 text-right tabular-nums"
                           value={a.employer}
                           min={0}
+                          step="0.01"
                           disabled={paying}
-                          onChange={(ev) =>
-                            setAmounts((p) => ({
-                              ...p,
-                              [e.employeeCode]: { ...a, employer: Number(ev.target.value) || 0 },
-                            }))
-                          }
+                          onChange={(ev) => setPart("employer", Math.max(0, Number(ev.target.value) || 0))}
                         />
                       </td>
                     </tr>
@@ -574,6 +655,31 @@ export function ContributionWizard({ onDone }: Props) {
               </tbody>
             </table>
           </ScrollArea>
+
+          {/* Pre-payment checks */}
+          {findings.length > 0 && (
+            <div className="mt-4 rounded-xl border border-[#E5E9EC] p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-[#5A6B74]">
+                Pre-payment checks{previous ? ` · compared with ${previous.period}` : ""}
+              </p>
+              <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-sm">
+                {findings.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    {f.level === "info" ? (
+                      <Info className="mt-0.5 size-4 shrink-0 text-[#5A6B74]" />
+                    ) : (
+                      <TriangleAlert
+                        className={`mt-0.5 size-4 shrink-0 ${f.level === "block" ? "text-[#C4453C]" : "text-[#B8860B]"}`}
+                      />
+                    )}
+                    <span className={f.level === "block" ? "font-medium text-[#8A2F28]" : "text-[#2A3B44]"}>
+                      {f.message}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Payment summary + authorise */}
           <div className="mt-5 flex flex-col gap-4 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -593,7 +699,8 @@ export function ContributionWizard({ onDone }: Props) {
               size="lg"
               className="bg-[#007A4D] px-7 font-semibold hover:bg-[#006A43]"
               onClick={authorise}
-              disabled={paying || totalRecords === 0}
+              disabled={paying || totalRecords === 0 || blocking.length > 0}
+              title={blocking.length > 0 ? "Fix the rows marked in red before paying" : undefined}
             >
               {paying ? (
                 <>

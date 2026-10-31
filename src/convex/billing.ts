@@ -15,7 +15,7 @@
  *   their own billing via getEmployerBilling and nothing else.
  * ============================================================================
  */
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
@@ -200,7 +200,7 @@ export const getEmployerBilling = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) throw new Error("Not authenticated");
+    if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForUser(ctx, user);
     if (!employer) return null;
 
@@ -326,8 +326,8 @@ export const getEmployerBilling = query({
 
 async function requireAdmin(ctx: Parameters<typeof getCurrentUser>[0]) {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.role !== "admin") throw new Error("Admin access required");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.role !== "admin") throw new ConvexError("Admin access required");
   return user;
 }
 
@@ -489,10 +489,10 @@ export const reverseCharge = mutation({
   handler: async (ctx, { chargeId, reason }) => {
     const user = await requireAdmin(ctx);
     const charge = await ctx.db.get(chargeId);
-    if (!charge) throw new Error("Billing charge not found");
+    if (!charge) throw new ConvexError("Billing charge not found");
     if (charge.status === "reversed") return { ok: true, unchanged: true };
     if (charge.status !== "paid") {
-      throw new Error("Only paid charges can be reversed");
+      throw new ConvexError("Only paid charges can be reversed");
     }
     const now = Date.now();
     await ctx.db.patch(chargeId, {

@@ -167,7 +167,10 @@ const settings = read("src/pages/employer/Settings.tsx");
 
 // --- payment state machine stays server-side -------------------------------
 check("engine: processPipeline is internal (not client-callable)", engine.includes("export const processPipeline = internalMutation"));
-check("engine: finalizeLivePayment is internal", engine.includes("export const finalizeLivePayment = internalMutation"));
+check("engine: no client-callable payment finalization or failure declaration", !/export const (finalizeLivePayment|markLivePaymentFailed) = mutation/.test(engine));
+check("engine: sandbox rail is fail-closed outside sandbox deployments", engine.includes("resolveRailMode") && engine.includes('railMode === "unavailable"'));
+check("auth: no hard-coded OTP relay key", !/fb_email_[A-Za-z0-9]{8,}/.test(readFileSync("src/convex/auth/emailOtp.ts", "utf8")));
+check("pension: admin bootstrap requires an operator allow-list", readFileSync("src/convex/pension.ts", "utf8").includes("bootstrapAdminEmails().has("));
 check("engine: finalizeLivePaymentSystem is internal", engine.includes("export const finalizeLivePaymentSystem = internalMutation"));
 check("engine: intakeApiSchedule (payroll API) is internal", engine.includes("export const intakeApiSchedule = internalMutation"));
 check("engine: authenticated resumePipeline exists for the UI", engine.includes("export const resumePipeline = mutation"));

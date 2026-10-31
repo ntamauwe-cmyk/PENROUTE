@@ -1,12 +1,10 @@
-import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";
-import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
-import React, { StrictMode, useEffect, useState, lazy, Suspense } from "react";
+import React, { StrictMode, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, Route, Routes } from "react-router";
 import "./index.css";
 import { adoptMasterFavicon } from "./lib/favicon";
 
@@ -33,6 +31,9 @@ const AdminPricing = lazy(() => import("./pages/employer/AdminPricing.tsx"));
 const AdminRevenue = lazy(() => import("./pages/employer/AdminRevenue.tsx"));
 const PfaPortal = lazy(() => import("./pages/pfa/PfaPortal.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const CheckContributions = lazy(() => import("./pages/CheckContributions.tsx"));
+const TermsPage = lazy(() => import("./pages/Legal.tsx").then((m) => ({ default: m.TermsPage })));
+const PrivacyPage = lazy(() => import("./pages/Legal.tsx").then((m) => ({ default: m.PrivacyPage })));
 
 // Simple loading fallback for route transitions — brand mark, no spinners on the logo
 function RouteLoading() {
@@ -44,50 +45,6 @@ function RouteLoading() {
       </div>
     </div>
   );
-}
-
-/**
- * "Open in full window" button — only rendered when the app is embedded in the
- * editor preview iframe. Lets you pop the app out to its own browser tab
- * (full width, no editor chrome). Never shows in production or standalone use.
- */
-function FullWindowButton() {
-  // Detect framing once during the initial render (no effect + setState).
-  const [embedded] = useState(() => {
-    try {
-      return window.self !== window.top;
-    } catch {
-      return true; // cross-origin access threw — we're framed
-    }
-  });
-  if (!embedded) return null;
-  return (
-    <button
-      onClick={() => window.open(window.location.href, "_blank", "noopener")}
-      className="fixed bottom-20 right-4 z-[60] rounded-full bg-[#0B1F2A] px-4 py-2 text-xs font-semibold text-white shadow-lg transition-colors hover:bg-[#0B1F2A]/90 lg:bottom-6 no-print"
-      title="Open the app in a full browser window"
-    >
-      ⤢ Full window
-    </button>
-  );
-}
-
-/** Silent error boundary — if VlyToolbar crashes it renders nothing instead of
- *  crashing the whole app (e.g. hook errors in WebContainer environment). */
-class ToolbarErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean }
-> {
-  state = { hasError: false };
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(err: Error) {
-    console.warn("[VlyToolbar] Caught error, toolbar disabled:", err.message);
-  }
-  render() {
-    return this.state.hasError ? null : this.props.children;
-  }
 }
 
 /** Hard guard so runtime errors never leave the preview as a blank page. */
@@ -104,7 +61,7 @@ class RootErrorBoundary extends React.Component<
     };
   }
   componentDidCatch(err: Error) {
-    console.error("[WebContainer preview] Root crash:", err);
+    console.error("[Penroute] Unhandled UI error:", err);
   }
   render() {
     if (this.state.hasError) {
@@ -118,6 +75,13 @@ class RootErrorBoundary extends React.Component<
               {this.state.message}
             </p>
             {/* Stack traces are developer-only debug output — never shown in production builds. */}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 rounded-lg bg-[#007A4D] px-4 py-2 text-sm font-semibold text-white"
+            >
+              Reload page
+            </button>
             {this.state.stack && import.meta.env.DEV && (
               <pre className="mt-3 text-left text-[10px] leading-4 text-muted-foreground/80 max-h-40 overflow-auto rounded border border-border/60 p-2">
                 {this.state.stack}
@@ -135,43 +99,17 @@ const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
 
 
-function RouteSyncer() {
-  const location = useLocation();
-  useEffect(() => {
-    window.parent.postMessage(
-      { type: "iframe-route-change", path: location.pathname },
-      "*",
-    );
-  }, [location.pathname]);
-
-  useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      if (event.data?.type === "navigate") {
-        if (event.data.direction === "back") window.history.back();
-        if (event.data.direction === "forward") window.history.forward();
-      }
-    }
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  return null;
-}
-
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
-      <ToolbarErrorBoundary>
-        <VlyToolbar />
-      </ToolbarErrorBoundary>
       <ConvexAuthProvider client={convex}>
         <BrowserRouter>
-          <RouteSyncer />
-          <FullWindowButton />
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<Landing />} />
+              <Route path="/check" element={<CheckContributions />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
               <Route
                 path="/auth"
                 element={<AuthPage redirectAfterAuth="/dashboard" />}

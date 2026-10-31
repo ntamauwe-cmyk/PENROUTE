@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { friendlyError } from "@/lib/errors";
 import { Input } from "@/components/ui/input";
 import {
   InputOTP,
@@ -109,7 +110,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     } catch (error) {
       console.error("Demo login error:", error);
       setError(
-        `Could not start the demo: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Could not start the demo: ${friendlyError(error, "Unknown error")}`,
       );
       setIsLoading(false);
     }
@@ -229,8 +230,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 )}
 
                 <p className="mt-5 text-center text-xs leading-relaxed text-[#5A6B74]">
-                  New to Penroute? Just sign in with your work email — your workspace is created
-                  on first sign-in.
+                  New to Penroute? Sign in with your work email, then register your company —
+                  we review every employer before contribution payments open.
                 </p>
               </>
             ) : (

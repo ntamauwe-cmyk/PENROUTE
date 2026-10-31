@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -48,7 +49,7 @@ export default function AdminPricing() {
     if (initRef.current || user?.role !== "admin") return;
     initRef.current = true;
     initialize().catch((e) => {
-      toast.error(e instanceof Error ? e.message : "Could not initialise pricing");
+      toast.error(friendlyError(e, "Could not initialise pricing"));
     });
   }, [user, initialize]);
 
@@ -116,7 +117,7 @@ export default function AdminPricing() {
       await fn();
       toast.success(okMsg);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Action failed");
+      toast.error(friendlyError(e, "Action failed"));
     } finally {
       setBusy(false);
     }

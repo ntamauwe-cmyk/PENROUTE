@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -26,6 +27,8 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { ClayTable, LoadingBlock, PageHeader } from "@/components/pension-ui";
 import { Landmark, Pencil, Plus, Search, UserX, UserCheck } from "lucide-react";
 import { toast } from "sonner";
+import { fmtNaira } from "@/lib/pension";
+import { statutoryContribution } from "@/lib/compliance";
 
 interface EmployeeRow {
   _id: string;
@@ -35,9 +38,10 @@ interface EmployeeRow {
   pfaId: string;
   pfaName: string;
   active: boolean;
+  monthlyEmolumentKobo: number | null;
 }
 
-const EMPTY_FORM = { fullName: "", employeeCode: "", pensionPin: "", pfaId: "" };
+const EMPTY_FORM = { fullName: "", employeeCode: "", pensionPin: "", pfaId: "", emolument: "" };
 
 export default function Employees() {
   const employees = useQuery(api.pension.listEmployerEmployees);
@@ -75,11 +79,17 @@ export default function Employees() {
       employeeCode: e.employeeCode,
       pensionPin: e.pensionPin,
       pfaId: e.pfaId,
+      emolument: e.monthlyEmolumentKobo ? String(e.monthlyEmolumentKobo / 100) : "",
     });
     setEditing(e);
   };
 
   const handleSave = async () => {
+    const emolument = form.emolument.trim() === "" ? 0 : Number(form.emolument.replace(/[₦,\s]/g, ""));
+    if (!Number.isFinite(emolument) || emolument < 0) {
+      toast.error("Monthly emoluments must be a naira amount");
+      return;
+    }
     setSaving(true);
     try {
       if (editing) {
@@ -89,6 +99,7 @@ export default function Employees() {
           employeeCode: form.employeeCode,
           pensionPin: form.pensionPin,
           pfaId: form.pfaId as Id<"pfas">,
+          monthlyEmolument: emolument,
         });
         toast.success(`${form.fullName} updated`);
         setEditing(null);
@@ -98,13 +109,14 @@ export default function Employees() {
           employeeCode: form.employeeCode,
           pensionPin: form.pensionPin,
           pfaId: form.pfaId as Id<"pfas">,
+          monthlyEmolument: emolument,
         });
         toast.success(`${form.fullName} added to the roster`);
         setAddOpen(false);
       }
       setForm({ ...EMPTY_FORM });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save employee");
+      toast.error(friendlyError(e, "Could not save employee"));
     } finally {
       setSaving(false);
     }
@@ -138,6 +150,25 @@ export default function Employees() {
           onChange={(e) => setForm((f) => ({ ...f, pensionPin: e.target.value }))}
           placeholder="PIN100123"
         />
+      </div>
+      <div>
+        <Label>Monthly emoluments (₦) — basic + housing + transport</Label>
+        <Input
+          className="mt-1.5"
+          inputMode="decimal"
+          value={form.emolument}
+          onChange={(e) => setForm((f) => ({ ...f, emolument: e.target.value }))}
+          placeholder="350000"
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          {(() => {
+            const n = Number(form.emolument.replace(/[₦,\s]/g, ""));
+            if (!form.emolument.trim() || !Number.isFinite(n) || n <= 0)
+              return "Used to calculate the statutory 8% employee / 10% employer contribution each month.";
+            const st = statutoryContribution(Math.round(n * 100));
+            return `Statutory minimum: employee ${fmtNaira(st.employeeKobo)} + employer ${fmtNaira(st.employerKobo)} per month.`;
+          })()}
+        </p>
       </div>
       <div>
         <Label>PFA</Label>
@@ -174,7 +205,7 @@ export default function Employees() {
     <DashboardShell>
       <PageHeader
         title="Employees"
-        description="Your pension roster — every employee needs a valid RSA PIN and PFA before contributions."
+        description="Your pension roster — every employee needs a valid RSA PIN and PFA before contributions. Staff can confirm their own contributions at penroute.net/check with their RSA PIN, staff ID and surname."
         actions={
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
@@ -283,7 +314,7 @@ export default function Employees() {
                       try {
                         await toggleActive({ employeeId: e._id });
                       } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Update failed");
+                        toast.error(friendlyError(err, "Update failed"));
                       }
                     }}
                   >

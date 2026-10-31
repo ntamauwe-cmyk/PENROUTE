@@ -68,6 +68,13 @@ const schema = defineSchema(
       // (attempts within the current 60s window + window start, ms epoch).
       intakeCount: v.optional(v.number()),
       intakeWindowStart: v.optional(v.number()),
+      // Legal acceptance recorded at registration (version of the published terms).
+      termsAcceptedAt: v.optional(v.number()),
+      employeeCount: v.optional(v.number()), // denormalised roster size
+      salaryPayDay: v.optional(v.number()), // 1..31 — drives the remittance deadline
+      lastDeadlineReminder: v.optional(v.string()), // "YYYY-MM:kind" — reminder idempotency
+      termsVersion: v.optional(v.string()),
+      termsAcceptedBy: v.optional(v.id("users")),
       createdAt: v.number(),
     })
       .index("by_rc", ["rcNumber"])
@@ -120,6 +127,9 @@ const schema = defineSchema(
       pensionPin: v.string(), // RSA PIN
       pfaId: v.id("pfas"),
       active: v.boolean(),
+      // Monthly emoluments (basic + housing + transport), kobo — drives the
+      // statutory 8% / 10% contribution calculation.
+      monthlyEmolumentKobo: v.optional(v.number()),
       createdAt: v.number(),
     })
       .index("by_employer", ["employerId"])
@@ -461,6 +471,57 @@ const schema = defineSchema(
       .index("by_period", ["periodKey"])
       .index("by_status", ["status"])
       .index("by_ref", ["transactionRef"]),
+
+    // ------------------------------------------------------------------
+    // KYB documents — files in Convex storage, visible only to the owning
+    // employer and platform admins.
+    // ------------------------------------------------------------------
+    kybDocuments: defineTable({
+      employerId: v.id("employers"),
+      storageId: v.id("_storage"),
+      kind: v.string(), // cac_certificate | tin_certificate | director_id | utility_bill | board_resolution | other
+      fileName: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+      // submitted | accepted | rejected
+      status: v.string(),
+      reviewNote: v.optional(v.string()),
+      uploadedBy: v.id("users"),
+      reviewedBy: v.optional(v.string()),
+      createdAt: v.number(),
+      reviewedAt: v.optional(v.number()),
+    }).index("by_employer", ["employerId"]),
+
+    // ------------------------------------------------------------------
+    // Notifications — in-app inbox per audience, optional email copy.
+    // ------------------------------------------------------------------
+    notifications: defineTable({
+      audience: v.string(), // employer | admin | pfa
+      employerId: v.optional(v.id("employers")),
+      pfaId: v.optional(v.id("pfas")),
+      kind: v.string(),
+      title: v.string(),
+      body: v.string(),
+      link: v.optional(v.string()),
+      readAt: v.optional(v.number()),
+      // not_configured | queued | sent | failed | none
+      emailStatus: v.string(),
+      emailTo: v.optional(v.string()),
+      createdAt: v.number(),
+    })
+      .index("by_employer", ["employerId", "createdAt"])
+      .index("by_audience", ["audience", "createdAt"])
+      .index("by_pfa", ["pfaId", "createdAt"]),
+
+    // ------------------------------------------------------------------
+    // Employee self-service lookups — failed-attempt throttle per RSA PIN
+    // (stores a SHA-256 of the PIN, never the PIN itself).
+    // ------------------------------------------------------------------
+    employeeLookups: defineTable({
+      pinHash: v.string(),
+      windowStart: v.number(),
+      failures: v.number(),
+    }).index("by_pinHash", ["pinHash"]),
 
     // ------------------------------------------------------------------
     // GitHub sync — staged files for committing the project source to the

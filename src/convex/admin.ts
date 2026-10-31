@@ -1,10 +1,12 @@
-import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { getCurrentUser } from "./users";
 import { internal } from "./_generated/api";
 import { audit } from "./employers";
 import { randRef } from "../lib/security";
 import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
+import { sandboxModeEnabled } from "./environment";
+import { notify } from "./notifications";
 
 // ============================================================================
 // PLATFORM ADMIN CONSOLE (spec §22, §23) — admins only
@@ -13,8 +15,8 @@ import { applyFlatFeeToActiveTiers, quoteForPostings } from "./pricing";
 
 async function requireAdmin(ctx: Parameters<typeof getCurrentUser>[0]) {
   const user = await getCurrentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.role !== "admin") throw new Error("Admin access required");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.role !== "admin") throw new ConvexError("Admin access required");
   return user;
 }
 
@@ -23,11 +25,14 @@ export const getAdminOverview = query({
   args: {},
   handler: async (ctx) => {
     await requireAdmin(ctx);
+    // Bounded reads: the overview must stay inside Convex's per-query read
+    // limits as the platform grows. Counts at the cap are reported as "N+".
+    const CAP = 4_000;
     const [employers, batches, exceptions, ledger, logs] = await Promise.all([
-      ctx.db.query("employers").take(10_000),
-      ctx.db.query("contributionBatches").take(10_000),
-      ctx.db.query("exceptions").withIndex("by_status", (q) => q.eq("status", "open")).take(10_000),
-      ctx.db.query("ledgerEntries").take(10_000),
+      ctx.db.query("employers").take(CAP),
+      ctx.db.query("contributionBatches").order("desc").take(CAP),
+      ctx.db.query("exceptions").withIndex("by_status", (q) => q.eq("status", "open")).take(1_000),
+      ctx.db.query("ledgerEntries").order("desc").take(CAP),
       ctx.db.query("integrationLogs").order("desc").take(20),
     ]);
     const feeRow = await ctx.db
@@ -48,8 +53,8 @@ export const getAdminOverview = query({
     // PFA statistics — real database values only (no fabricated metrics).
     const [pfas, settlements, records] = await Promise.all([
       ctx.db.query("pfas").collect(),
-      ctx.db.query("settlements").take(10_000),
-      ctx.db.query("contributionRecords").take(10_000),
+      ctx.db.query("settlements").order("desc").take(CAP),
+      ctx.db.query("contributionRecords").order("desc").take(CAP),
     ]);
     const pfasWithTransactions = new Set(settlements.map((s) => String(s.pfaId)));
     for (const r of records) pfasWithTransactions.add(String(r.pfaId));
@@ -67,10 +72,18 @@ export const getAdminOverview = query({
       totalFees,
       feePerEmployeeKobo: feeRow?.value ?? 900,
       effectiveFeePerEmployeeKobo,
-      railMode: (railRow?.value ?? 0) === 1 ? "live" : "sandbox",
+      railMode: (railRow?.value ?? 0) === 1 ? "live" : sandboxModeEnabled() ? "sandbox" : "not_configured",
+      sandboxDeployment: sandboxModeEnabled(),
+      paystackKeyConfigured: Boolean(process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_SECRET_KEY.length > 20),
       recentBatches: batches.sort((a, b) => b.createdAt - a.createdAt).slice(0, 10),
       exceptions,
       ledgerCount: ledger.length,
+      capped: {
+        employers: employers.length >= CAP,
+        batches: batches.length >= CAP,
+        ledger: ledger.length >= CAP,
+        records: records.length >= CAP,
+      },
       recentLogs: logs,
       pfaStats: {
         activePfas: pfas.filter((p) => p.active !== false && p.status !== "INACTIVE").length,
@@ -89,14 +102,23 @@ export const listAllEmployers = query({
   args: {},
   handler: async (ctx) => {
     await requireAdmin(ctx);
-    const employers = await ctx.db.query("employers").take(10_000);
-    const batches = await ctx.db.query("contributionBatches").take(10_000);
-    const employees = await ctx.db.query("employees").take(10_000);
-
-    return employers
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map((e) => {
-        const eb = batches.filter((b) => b.employerId === e._id);
+    const employers = (await ctx.db.query("employers").order("desc").take(200)).sort(
+      (a, b) => b.createdAt - a.createdAt,
+    );
+    // Per-employer indexed reads (bounded) instead of whole-table scans.
+    const rows = await Promise.all(
+      employers.map(async (e) => {
+        const [eb, staff] = await Promise.all([
+          ctx.db.query("contributionBatches").withIndex("by_employer", (q) => q.eq("employerId", e._id)).order("desc").take(60),
+          // Rows created before the denormalised counter existed fall back to a bounded count.
+          e.employeeCount !== undefined
+            ? Promise.resolve(null)
+            : ctx.db.query("employees").withIndex("by_employer", (q) => q.eq("employerId", e._id)).take(300),
+        ]);
+        return { e, eb, employeeCount: e.employeeCount ?? staff?.length ?? 0 };
+      }),
+    );
+    return rows.map(({ e, eb, employeeCount }) => {
         return {
           _id: e._id,
           name: e.name,
@@ -104,7 +126,12 @@ export const listAllEmployers = query({
           status: e.status,
           kycStatus: e.kycStatus,
           contactEmail: e.contactEmail,
-          employees: employees.filter((x) => x.employerId === e._id).length,
+          // KYB details the reviewer needs before approving an employer.
+          tin: e.tin,
+          registeredAddress: e.registeredAddress,
+          contactPhone: e.contactPhone,
+          representativeName: e.representativeName,
+          employees: employeeCount,
           batches: eb.length,
           processedKobo: eb
             .filter((b) => b.status === "completed")
@@ -137,7 +164,7 @@ export const adminUpdateFee = mutation({
   handler: async (ctx, { perEmployeeFeeKobo }) => {
     const user = await requireAdmin(ctx);
     if (!Number.isFinite(perEmployeeFeeKobo) || perEmployeeFeeKobo < 0) {
-      throw new Error("Invalid fee amount");
+      throw new ConvexError("Invalid fee amount");
     }
     const row = await ctx.db
       .query("systemConfig")
@@ -189,6 +216,15 @@ export const adminSetRailMode = mutation({
   args: { mode: v.union(v.literal("sandbox"), v.literal("live")) },
   handler: async (ctx, { mode }) => {
     const user = await requireAdmin(ctx);
+    if (mode === "sandbox" && !sandboxModeEnabled()) {
+      throw new ConvexError("The sandbox payment rail is disabled on production deployments");
+    }
+    if (mode === "live") {
+      const key = process.env.PAYSTACK_SECRET_KEY ?? "";
+      if (!/^sk_(live|test)_/.test(key) || key.length <= 20) {
+        throw new ConvexError("Set PAYSTACK_SECRET_KEY in the Convex deployment environment before enabling the live rail");
+      }
+    }
     const row = await ctx.db
       .query("systemConfig")
       .withIndex("by_key", (q) => q.eq("key", "rail_mode"))
@@ -228,16 +264,46 @@ export const adminSetEmployerStatus = mutation({
   handler: async (ctx, { employerId, status }) => {
     const user = await requireAdmin(ctx);
     const employer = await ctx.db.get(employerId);
-    if (!employer) throw new Error("Employer not found");
+    if (!employer) throw new ConvexError("Employer not found");
+    if (status === "active" && employer.kycStatus !== "verified") {
+      // First approval: KYB evidence must have been reviewed and accepted.
+      const docs = await ctx.db
+        .query("kybDocuments")
+        .withIndex("by_employer", (q) => q.eq("employerId", employerId))
+        .take(50);
+      if (!docs.some((d) => d.kind === "cac_certificate" && d.status === "accepted")) {
+        throw new ConvexError(
+          "Accept the employer's CAC certificate of incorporation (KYB documents) before approving the account",
+        );
+      }
+    }
     await ctx.db.patch(employerId, { status, ...(status === "active" ? { kycStatus: "verified" } : {}) });
     await audit(ctx, {
       actor: user.email ?? "admin",
-      action: status === "suspended" ? "employer_suspended" : "employer_reactivated",
+      action:
+        status === "suspended"
+          ? "employer_suspended"
+          : employer.status === "pending" || employer.status === "under_review"
+            ? "employer_approved"
+            : "employer_reactivated",
       entityType: "employer",
       entityId: employerId,
       employerId,
       details: `${employer.name} → ${status}`,
     });
+    if (employer.status !== status) {
+      await notify(ctx, {
+        audience: "employer",
+        employerId,
+        kind: status === "active" ? "employer_approved" : "employer_suspended",
+        title: status === "active" ? "Your Penroute account is approved" : "Your Penroute account is suspended",
+        body:
+          status === "active"
+            ? `${employer.name} is approved. You can now submit monthly pension schedules and pay contributions.`
+            : `${employer.name} has been suspended and cannot submit new contribution payments. Contact Penroute support for details.`,
+        link: "/dashboard",
+      });
+    }
     return { ok: true };
   },
 });
@@ -248,9 +314,9 @@ export const adminRetryPipeline = mutation({
   handler: async (ctx, { batchId }) => {
     const user = await requireAdmin(ctx);
     const batch = await ctx.db.get(batchId);
-    if (!batch) throw new Error("Batch not found");
+    if (!batch) throw new ConvexError("Batch not found");
     if (batch.status !== "processing") {
-      throw new Error(`Only processing batches can be retried (status: ${batch.status})`);
+      throw new ConvexError(`Only processing batches can be retried (status: ${batch.status})`);
     }
     // Retry through the server-only pipeline; never expose the state machine to clients.
     await ctx.scheduler.runAfter(0, internal.engine.processPipeline, { batchId });
@@ -288,15 +354,15 @@ export const adminSetPfaIntegration = mutation({
   handler: async (ctx, { pfaId, integrationMode, endpoint, apiSecret, secretHeaderName, hmacSecret }) => {
     const user = await requireAdmin(ctx);
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("PFA not found");
+    if (!pfa) throw new ConvexError("PFA not found");
 
     if (integrationMode === "live_api") {
       if (!endpoint || !/^https:\/\/.+/.test(endpoint)) {
-        throw new Error("live_api requires a valid https:// endpoint");
+        throw new ConvexError("live_api requires a valid https:// endpoint");
       }
       if (!apiSecret) {
         const existing = pfa.endpointConfig as { apiSecret?: string } | undefined;
-        if (!existing?.apiSecret) throw new Error("live_api requires an API secret (none stored yet)");
+        if (!existing?.apiSecret) throw new ConvexError("live_api requires an API secret (none stored yet)");
       }
     }
 
@@ -333,7 +399,7 @@ export const adminClearPfaSecrets = mutation({
   handler: async (ctx, { pfaId }) => {
     const user = await requireAdmin(ctx);
     const pfa = await ctx.db.get(pfaId);
-    if (!pfa) throw new Error("PFA not found");
+    if (!pfa) throw new ConvexError("PFA not found");
     const current = (pfa.endpointConfig ?? {}) as Record<string, unknown>;
     const next = { ...current };
     delete next.apiSecret;
@@ -370,5 +436,34 @@ export const adminListPfaIntegrations = query({
           endpoint: cfg?.endpoint ?? null,
         };
       });
+  },
+});
+
+/**
+ * OPERATOR-ONLY admin grant (not callable from any browser): run from a
+ * trusted terminal with deploy access —
+ *   npx convex run admin:grantPlatformAdmin '{"email":"ops@penroute.net"}'
+ * The account must already exist (the person has signed in once).
+ */
+export const grantPlatformAdmin = internalMutation({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const norm = email.trim().toLowerCase();
+    const users = await ctx.db.query("users").withIndex("email", (q) => q.eq("email", norm)).take(10);
+    const user = users.find((u) => !u.isAnonymous);
+    if (!user) throw new ConvexError(`No signed-up account for ${norm} — ask them to sign in once first`);
+    if (user.role === "admin") return { ok: true, unchanged: true };
+    await ctx.db.patch(user._id, { role: "admin", pfaId: undefined });
+    await audit(ctx, {
+      actor: "operator-cli",
+      action: "platform_admin_granted",
+      entityType: "user",
+      entityId: user._id,
+      field: "role",
+      before: user.role ?? "(none)",
+      after: "admin",
+      details: `${norm} granted platform admin from the operator CLI`,
+    });
+    return { ok: true };
   },
 });

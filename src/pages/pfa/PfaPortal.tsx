@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import { DashboardShell } from "@/components/DashboardShell";
+import { SettlementConfirmations } from "@/components/SettlementConfirmations";
 import {
   ClayTable,
   LoadingBlock,
@@ -142,7 +143,12 @@ function AccessDenied({ onSignOut }: { onSignOut: () => void }) {
 function SectionView({ section }: { section: PfaSection }) {
   switch (section) {
     case "settlements":
-      return <PfaSettlements />;
+      return (
+        <div className="space-y-6">
+          <SettlementConfirmations scope="pfa" />
+          <PfaSettlements />
+        </div>
+      );
     case "contributions":
       return <PfaContributions />;
     case "employees":

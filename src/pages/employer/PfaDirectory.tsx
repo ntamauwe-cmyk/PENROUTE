@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { friendlyError } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { useNavigate } from "react-router";
 import { api } from "@/convex/_generated/api";
@@ -101,7 +102,7 @@ export default function PfaDirectory() {
           : `Directory already up to date (${r.total} PFAs)`,
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Sync failed");
+      toast.error(friendlyError(e, "Sync failed"));
     }
   };
 
@@ -112,7 +113,7 @@ export default function PfaDirectory() {
       await setStatus({ pfaId: p._id, active: next });
       toast.success(`${p.name} ${next ? "activated" : "deactivated"}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(friendlyError(e, "Update failed"));
     } finally {
       setBusyId(null);
     }
