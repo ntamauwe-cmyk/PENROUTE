@@ -44,7 +44,9 @@ describe("production journey: employer → Paystack → PFA → reconciliation �
       acceptTerms: true,
     });
     const pfas = await owner.client.query(api.pension.listPfas, {});
-    expect(pfas.length).toBeGreaterThanOrEqual(19);
+    expect(pfas.length).toBe(20);
+    expect(pfas.map((p) => p.name)).toEqual(expect.arrayContaining(["AccessARM Pension Managers Limited", "Pensions Alliance Limited"]));
+    expect(pfas.find((p) => p.code === "116")?.websiteUrl).toBe("https://stanbicibtcpension.com");
     expect(pfas.every((p) => !("endpointConfig" in p))).toBe(true);
     const [pA, pB] = pfas.filter((p) => p.active);
     const staff = [

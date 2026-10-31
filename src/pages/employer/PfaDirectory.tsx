@@ -123,7 +123,7 @@ export default function PfaDirectory() {
     <DashboardShell>
       <PageHeader
         title="PFA Directory"
-        description="Master directory of the 19 current PenCom-licensed Pension Fund Administrators. A PFA listed here is a supported pension destination — it does not imply the PFA has authorised or integrated with Penroute."
+        description="Master directory of the current PenCom-licensed Pension Fund Administrators. A PFA listed here is a supported pension destination — it does not imply the PFA has authorised or integrated with Penroute."
         actions={
           isAdmin ? (
             <Button variant="outline" size="sm" onClick={handleSync}>
