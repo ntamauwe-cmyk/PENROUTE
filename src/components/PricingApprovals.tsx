@@ -40,12 +40,12 @@ export function PricingApprovals() {
             <ShieldCheck className="size-5 text-primary" /> Pricing changes awaiting approval
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            No single person can change what employers pay. A fee or price change applies only after a
-            different administrator with fee-approval authority approves it.
+            The super admin changes prices directly. A change by any other administrator applies only
+            after the super admin, or an approver they assigned, approves it.
           </p>
         </div>
         <Badge variant="secondary">
-          {data.isApprover ? "You can approve others' changes" : "You can propose changes"}
+          {data.isSuperAdmin ? "Super admin" : data.isApprover ? "You can approve others' changes" : "You can propose changes"}
         </Badge>
       </div>
 
@@ -155,8 +155,8 @@ export function AdminTeam() {
         <ShieldCheck className="size-5 text-primary" /> Administrators
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Administrators with <strong>fee-approval authority</strong> approve pricing changes proposed by
-        others and manage this list. Keep at least two people here so changes can be approved.
+        Only the <strong>super admin</strong> adds or removes administrators and decides who may
+        <strong> approve fees</strong>. Other administrators can propose pricing changes, which wait for approval.
       </p>
       <ul className="mt-4 divide-y rounded-lg border">
         {data.admins.map((a) => (
@@ -166,9 +166,9 @@ export function AdminTeam() {
               {a.isMe && <span className="text-muted-foreground"> (you)</span>}
             </span>
             <Badge variant="secondary" className={a.pricingApprover ? "bg-[#E6F6EF] text-[#04593A]" : ""}>
-              {a.pricingApprover ? "Can approve fees" : "Can propose"}
+              {a.superAdmin ? "Super admin" : a.pricingApprover ? "Can approve fees" : "Can propose"}
             </Badge>
-            {data.canManage && !a.isMe && (
+            {data.canManage && !a.isMe && !a.superAdmin && (
               <>
                 <Button
                   size="sm"
@@ -198,7 +198,7 @@ export function AdminTeam() {
       </ul>
       {data.canClaimApprover && (
         <div className="mt-4 rounded-lg border border-[#D4AF37]/40 bg-[#FBF3E0] p-3 text-sm text-[#7A5A10]">
-          No administrator has fee-approval authority yet. As the founding operator you can take it once.
+          This platform has no super admin yet. As the founding operator you can take that role once.
           <Button
             size="sm"
             className="ml-3"
@@ -207,7 +207,7 @@ export function AdminTeam() {
               setBusy(true);
               try {
                 await claim({});
-                toast.success("You now have fee-approval authority");
+                toast.success("You are now the super admin");
               } catch (err) {
                 toast.error(friendlyError(err));
               } finally {
@@ -215,7 +215,7 @@ export function AdminTeam() {
               }
             }}
           >
-            Take approval authority
+            Become super admin
           </Button>
         </div>
       )}
@@ -239,7 +239,7 @@ export function AdminTeam() {
           <p className="w-full text-xs text-muted-foreground">They must sign in to penroute.net once before you add them.</p>
         </div>
       ) : (
-        <p className="mt-3 text-xs text-muted-foreground">Only an administrator with fee-approval authority can change this list.</p>
+        <p className="mt-3 text-xs text-muted-foreground">Only the super admin can change this list.</p>
       )}
     </section>
   );

@@ -375,6 +375,8 @@ export const createTier = mutation({
   args: createTierArgs,
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
+    // The super admin's changes apply immediately; everyone else's need approval.
+    if (user.superAdmin) return { applied: true as const, result: await apply_createTier(ctx, args, user) };
     return await proposePricingChange(ctx, user, "createTier", args);
   },
 });
@@ -470,6 +472,8 @@ export const updateTier = mutation({
   args: updateTierArgs,
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
+    // The super admin's changes apply immediately; everyone else's need approval.
+    if (user.superAdmin) return { applied: true as const, result: await apply_updateTier(ctx, args, user) };
     return await proposePricingChange(ctx, user, "updateTier", args);
   },
 });
@@ -516,6 +520,8 @@ export const setTierActive = mutation({
   args: setTierActiveArgs,
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
+    // The super admin's changes apply immediately; everyone else's need approval.
+    if (user.superAdmin) return { applied: true as const, result: await apply_setTierActive(ctx, args, user) };
     return await proposePricingChange(ctx, user, "setTierActive", args);
   },
 });
@@ -567,6 +573,8 @@ export const createPlan = mutation({
   args: createPlanArgs,
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
+    // The super admin's changes apply immediately; everyone else's need approval.
+    if (user.superAdmin) return { applied: true as const, result: await apply_createPlan(ctx, args, user) };
     return await proposePricingChange(ctx, user, "createPlan", args);
   },
 });
@@ -618,6 +626,8 @@ export const updatePlan = mutation({
   args: updatePlanArgs,
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
+    // The super admin's changes apply immediately; everyone else's need approval.
+    if (user.superAdmin) return { applied: true as const, result: await apply_updatePlan(ctx, args, user) };
     return await proposePricingChange(ctx, user, "updatePlan", args);
   },
 });
@@ -651,6 +661,8 @@ export const setPlanActive = mutation({
   args: setPlanActiveArgs,
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
+    // The super admin's changes apply immediately; everyone else's need approval.
+    if (user.superAdmin) return { applied: true as const, result: await apply_setPlanActive(ctx, args, user) };
     return await proposePricingChange(ctx, user, "setPlanActive", args);
   },
 });

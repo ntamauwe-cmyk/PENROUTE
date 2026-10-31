@@ -212,6 +212,8 @@ export const adminUpdateFee = mutation({
     if (!Number.isInteger(perEmployeeFeeKobo) || perEmployeeFeeKobo < 0 || perEmployeeFeeKobo > 10_000_000) {
       throw new ConvexError("Invalid fee amount");
     }
+    // The super admin's change applies immediately; everyone else's needs approval.
+    if (user.superAdmin) return { applied: true as const, result: await apply_flatFee(ctx, { perEmployeeFeeKobo }, user) };
     return await proposePricingChange(ctx, user, "flatFee", { perEmployeeFeeKobo });
   },
 });
