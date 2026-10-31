@@ -15,7 +15,7 @@ const DEMO_EMPLOYER_RC = "RC-1938476";
 // ============================================================================
 // PFA DIRECTORY — licensed Pension Fund Administrators in Nigeria
 // ----------------------------------------------------------------------------
-// Master/reference data lives in pfaDirectory.ts (the 19 current PenCom-
+// Master/reference data lives in pfaDirectory.ts (the current PenCom-
 // licensed PFAs, keyed by immutable slug). syncPfaDirectory below keeps its
 // historical name/shape for existing UI callers and delegates to the same
 // idempotent seeder. Codes are Penroute reference codes for routing/integration
@@ -24,7 +24,7 @@ const DEMO_EMPLOYER_RC = "RC-1938476";
 // ============================================================================
 
 /**
- * Idempotently adopts the full PFA directory (19 current licensed PFAs).
+ * Idempotently adopts the full PFA directory (all current licensed PFAs).
  * Safe to call any time — never creates duplicates. Admins only: it updates
  * master data.
  */

@@ -6,7 +6,8 @@ import { getCurrentUser } from "./users";
 import { audit, getEmployerForUser } from "./employers";
 
 // ============================================================================
-// PFA MASTER DATA — the current licensed PFAs published by PenCom (19).
+// PFA MASTER DATA — the 20 PFAs in PenCom's Q1 2026 industry report
+// (pencom.gov.ng), with contact details from PenCom's PFA list.
 //
 // This is REFERENCE data: presence in Penroute means the PFA is a supported
 // selectable pension destination / master record. It does NOT mean the PFA has
@@ -16,7 +17,7 @@ import { audit, getEmployerForUser } from "./employers";
 //
 // `slug` is the immutable internal identifier. Never use the display name as a
 // primary key. Codes are Penroute reference codes (NOT official PenCom
-// numbers); they are deterministic (101–119) so they can never collide with
+// numbers); they are deterministic (101–120) so they can never collide with
 // legacy rows (001–020) on any deployment.
 // ============================================================================
 
@@ -28,28 +29,33 @@ export type PfaSeedEntry = {
   shortName: string;
   /** Legacy/alternate names a deployment may already hold — matched during seeding. */
   aliases: string[];
+  /** Contact details as published on PenCom's PFA list (pencom.gov.ng). */
+  websiteUrl?: string;
+  supportEmail?: string;
+  supportPhone?: string;
 };
 
 export const PFA_SEED: PfaSeedEntry[] = [
-  { slug: "access_pensions", code: "101", name: "Access Pensions Limited", legalName: "Access Pensions Limited", shortName: "Access Pensions", aliases: ["Access ARM Pensions", "ARM Pensions", "Access Pensions"] },
-  { slug: "cardinalstone_pensions", code: "102", name: "CardinalStone Pensions Limited", legalName: "CardinalStone Pensions Limited", shortName: "CardinalStone", aliases: ["CardinalStone Pensions"] },
-  { slug: "citizens_pensions", code: "103", name: "Citizens Pensions Limited", legalName: "Citizens Pensions Limited", shortName: "Citizens Pensions", aliases: ["Citizens Pensions"] },
-  { slug: "crusadersterling_pensions", code: "104", name: "CrusaderSterling Pensions Limited", legalName: "CrusaderSterling Pensions Limited", shortName: "CrusaderSterling", aliases: ["Crusader Sterling Pensions", "CrusaderSterling Pensions"] },
-  { slug: "fcmb_pensions", code: "105", name: "FCMB Pensions Limited", legalName: "FCMB Pensions Limited", shortName: "FCMB Pensions", aliases: ["FCMB Pensions"] },
-  { slug: "fidelity_pension_managers", code: "106", name: "Fidelity Pension Managers Limited", legalName: "Fidelity Pension Managers Limited", shortName: "Fidelity Pensions", aliases: ["Fidelity Pensions Managers", "Fidelity Pension Managers"] },
-  { slug: "gt_pension_managers", code: "107", name: "Guaranty Trust Pension Managers Limited", legalName: "Guaranty Trust Pension Managers Limited", shortName: "Guaranty Trust", aliases: ["Guaranty Trust Pension Managers", "GT Pension Managers"] },
-  { slug: "leadway_pensure", code: "108", name: "Leadway Pensure PFA Limited", legalName: "Leadway Pensure PFA Limited", shortName: "Leadway Pensure", aliases: ["Leadway Pensions", "Leadway Pensure PFA"] },
-  { slug: "nupemco", code: "109", name: "Nigerian University Pension Management Company (NUPEMCO)", legalName: "Nigerian University Pension Management Company (NUPEMCO)", shortName: "NUPEMCO", aliases: ["NUPEMCO", "Nigerian University Pension Management Company"] },
-  { slug: "nlpc_pfa", code: "110", name: "NLPC Pension Fund Administrators Limited", legalName: "NLPC Pension Fund Administrators Limited", shortName: "NLPC PFA", aliases: ["NLPC Pensions", "NLPC Pension Fund Administrators"] },
-  { slug: "norrenberger_pensions", code: "111", name: "Norrenberger Pensions Limited", legalName: "Norrenberger Pensions Limited", shortName: "Norrenberger", aliases: ["Norrenberger Pensions"] },
-  { slug: "npf_pensions", code: "112", name: "NPF Pensions Limited", legalName: "NPF Pensions Limited", shortName: "NPF Pensions", aliases: ["Nigeria Police Pensions", "NPF Pensions"] },
-  { slug: "oak_pensions", code: "113", name: "OAK Pensions Limited", legalName: "OAK Pensions Limited", shortName: "OAK Pensions", aliases: ["OAK Pensions"] },
-  { slug: "parthian_pensions", code: "114", name: "Parthian Pensions Limited", legalName: "Parthian Pensions Limited", shortName: "Parthian Pensions", aliases: ["Parthian Pensions"] },
-  { slug: "premium_pension", code: "115", name: "Premium Pension Limited", legalName: "Premium Pension Limited", shortName: "Premium Pension", aliases: ["Premium Pensions"] },
-  { slug: "stanbic_ibtc_pensions", code: "116", name: "Stanbic IBTC Pension Managers Limited", legalName: "Stanbic IBTC Pension Managers Limited", shortName: "Stanbic IBTC", aliases: ["Stanbic IBTC Pension Managers"] },
-  { slug: "tangerine_apt", code: "117", name: "Tangerine APT Pensions Limited", legalName: "Tangerine APT Pensions Limited", shortName: "Tangerine APT", aliases: ["Tangerine A&G Pensions", "Apt Pensions", "Tangerine APT Pensions"] },
-  { slug: "trustfund_pensions", code: "118", name: "Trustfund Pensions Limited", legalName: "Trustfund Pensions Limited", shortName: "Trustfund Pensions", aliases: ["Trustfund Pensions"] },
-  { slug: "veritas_glanvills", code: "119", name: "Veritas Glanvills Pensions Limited", legalName: "Veritas Glanvills Pensions Limited", shortName: "Veritas Glanvills", aliases: ["Veritas Glanvills Pensions"] },
+  { slug: "access_pensions", code: "101", name: "AccessARM Pension Managers Limited", legalName: "AccessARM Pension Managers Limited", shortName: "AccessARM Pensions", aliases: ["Access Pensions Limited", "Access ARM Pensions", "ARM Pensions", "Access Pensions", "AccessARM Pensions"], websiteUrl: "https://accesspensions.ng", supportEmail: "info@accesspensions.ng", supportPhone: "+234 9 461 3333" },
+  { slug: "cardinalstone_pensions", code: "102", name: "CardinalStone Pensions Limited", legalName: "CardinalStone Pensions Limited", shortName: "CardinalStone", aliases: ["CardinalStone Pensions"], websiteUrl: "https://cardinalstonepensions.com", supportEmail: "info@cardinalstonepensions.com", supportPhone: "0201 330 0180" },
+  { slug: "citizens_pensions", code: "103", name: "Citizens Pensions Limited", legalName: "Citizens Pensions Limited", shortName: "Citizens Pensions", aliases: ["Citizens Pensions"], websiteUrl: "https://citizenspensions.com", supportEmail: "info@citizenspensions.com", supportPhone: "0201 630 6030" },
+  { slug: "crusadersterling_pensions", code: "104", name: "CrusaderSterling Pensions Limited", legalName: "CrusaderSterling Pensions Limited", shortName: "CrusaderSterling", aliases: ["Crusader Sterling Pensions", "CrusaderSterling Pensions"], websiteUrl: "https://crusaderpensions.com", supportEmail: "info@crusaderpensions.com", supportPhone: "+234 1 271 3800" },
+  { slug: "fcmb_pensions", code: "105", name: "FCMB Pensions Limited", legalName: "FCMB Pensions Limited", shortName: "FCMB Pensions", aliases: ["FCMB Pensions"], websiteUrl: "https://fcmbpensions.com", supportEmail: "info@fcmbpensions.com", supportPhone: "+234 9 461 3501" },
+  { slug: "fidelity_pension_managers", code: "106", name: "Fidelity Pension Managers Limited", legalName: "Fidelity Pension Managers Limited", shortName: "Fidelity Pensions", aliases: ["Fidelity Pensions Managers", "Fidelity Pension Managers"], websiteUrl: "https://fidelitypensionmanagers.com", supportEmail: "info@fidelitypensionmanagers.com", supportPhone: "+234 1 462 6963" },
+  { slug: "gt_pension_managers", code: "107", name: "Guaranty Trust Pension Managers Limited", legalName: "Guaranty Trust Pension Managers Limited", shortName: "Guaranty Trust", aliases: ["Guaranty Trust Pension Managers", "GT Pension Managers"], websiteUrl: "https://gtpensionmanagers.com", supportPhone: "+234 813 985 5002" },
+  { slug: "leadway_pensure", code: "108", name: "Leadway Pensure PFA Limited", legalName: "Leadway Pensure PFA Limited", shortName: "Leadway Pensure", aliases: ["Leadway Pensions", "Leadway Pensure PFA"], websiteUrl: "https://leadway-pensure.com", supportEmail: "info@leadway-pensure.com", supportPhone: "+234 1 280 0850" },
+  { slug: "nupemco", code: "109", name: "Nigerian University Pension Management Company (NUPEMCO)", legalName: "Nigerian University Pension Management Company (NUPEMCO)", shortName: "NUPEMCO", aliases: ["NUPEMCO", "Nigerian University Pension Management Company"], websiteUrl: "https://www.nupemco.com", supportEmail: "info@nupemco.com", supportPhone: "+234 808 283 3355" },
+  { slug: "nlpc_pfa", code: "110", name: "NLPC Pension Fund Administrators Limited", legalName: "NLPC Pension Fund Administrators Limited", shortName: "NLPC PFA", aliases: ["NLPC Pensions", "NLPC Pension Fund Administrators"], websiteUrl: "https://nlpcpfa.com", supportEmail: "info@nlpcpfa.com", supportPhone: "+234 1 448 2780" },
+  { slug: "norrenberger_pensions", code: "111", name: "Norrenberger Pensions Limited", legalName: "Norrenberger Pensions Limited", shortName: "Norrenberger", aliases: ["Norrenberger Pensions"], websiteUrl: "https://norrenpensions.com", supportEmail: "clientservice.pensions@norrenberger.com", supportPhone: "+234 9 783 1663" },
+  { slug: "npf_pensions", code: "112", name: "NPF Pensions Limited", legalName: "NPF Pensions Limited", shortName: "NPF Pensions", aliases: ["Nigeria Police Pensions", "NPF Pensions"], websiteUrl: "https://npfpensions.com.ng", supportEmail: "info@npfpensions.com", supportPhone: "+234 9 460 3401" },
+  { slug: "oak_pensions", code: "113", name: "OAK Pensions Limited", legalName: "OAK Pensions Limited", shortName: "OAK Pensions", aliases: ["OAK Pensions"], websiteUrl: "https://oakpensions.com", supportEmail: "info@oakpensions.com", supportPhone: "+234 1 295 3095" },
+  { slug: "parthian_pensions", code: "114", name: "Parthian Pensions Limited", legalName: "Parthian Pensions Limited", shortName: "Parthian Pensions", aliases: ["Parthian Pensions"], websiteUrl: "https://parthianpensions.com", supportEmail: "info@parthianpensions.com" },
+  { slug: "premium_pension", code: "115", name: "Premium Pension Limited", legalName: "Premium Pension Limited", shortName: "Premium Pension", aliases: ["Premium Pensions"], websiteUrl: "https://premiumpension.com", supportEmail: "info@premiumpension.com", supportPhone: "+234 9 461 5707" },
+  { slug: "stanbic_ibtc_pensions", code: "116", name: "Stanbic IBTC Pension Managers Limited", legalName: "Stanbic IBTC Pension Managers Limited", shortName: "Stanbic IBTC", aliases: ["Stanbic IBTC Pension Managers"], websiteUrl: "https://stanbicibtcpension.com", supportEmail: "PensionSolution@stanbicibtc.com", supportPhone: "+234 1 271 6021" },
+  { slug: "tangerine_apt", code: "117", name: "Tangerine APT Pensions Limited", legalName: "Tangerine APT Pensions Limited", shortName: "Tangerine APT", aliases: ["Tangerine A&G Pensions", "Apt Pensions", "Tangerine APT Pensions"], websiteUrl: "https://tangerineapt.ng", supportEmail: "info@TangerineApt.Africa", supportPhone: "+234 1 448 5490" },
+  { slug: "trustfund_pensions", code: "118", name: "Trustfund Pensions Limited", legalName: "Trustfund Pensions Limited", shortName: "Trustfund Pensions", aliases: ["Trustfund Pensions"], websiteUrl: "https://trustfundpensions.com", supportEmail: "enquiries@trustfundpensions.com", supportPhone: "+234 9 672 5777" },
+  { slug: "veritas_glanvills", code: "119", name: "Veritas Glanvills Pensions Limited", legalName: "Veritas Glanvills Pensions Limited", shortName: "Veritas Glanvills", aliases: ["Veritas Glanvills Pensions"], websiteUrl: "https://vgpensions.com", supportEmail: "info@vgpensions.com", supportPhone: "+234 1 462 7060" },
+  { slug: "pensions_alliance", code: "120", name: "Pensions Alliance Limited", legalName: "Pensions Alliance Limited", shortName: "PAL Pensions", aliases: ["Pensions Alliance", "PAL Pensions", "Pensions Alliance Limited"] },
 ];
 
 export const INTEGRATION_STATUSES = ["not_integrated", "sandbox", "pending_approval", "production"] as const;
@@ -131,9 +137,9 @@ export async function applyPfaSeed(
         updatedAt: now,
       };
       // Never clobber administrator-recorded verified metadata; fill only when absent.
-      patch.websiteUrl = existing.websiteUrl ?? undefined;
-      patch.supportEmail = existing.supportEmail ?? undefined;
-      patch.supportPhone = existing.supportPhone ?? undefined;
+      patch.websiteUrl = existing.websiteUrl ?? seed.websiteUrl;
+      patch.supportEmail = existing.supportEmail ?? seed.supportEmail;
+      patch.supportPhone = existing.supportPhone ?? seed.supportPhone;
       patch.headquartersAddress = existing.headquartersAddress ?? undefined;
       patch.logoUrl = existing.logoUrl ?? undefined;
 
@@ -144,7 +150,12 @@ export async function applyPfaSeed(
         existing.pencomStatus !== patch.pencomStatus ||
         existing.status !== patch.status ||
         existing.active !== true ||
-        existing.integrationStatus === undefined;
+        existing.integrationStatus === undefined ||
+        existing.legalName !== patch.legalName ||
+        existing.shortName !== patch.shortName ||
+        existing.websiteUrl !== patch.websiteUrl ||
+        existing.supportEmail !== patch.supportEmail ||
+        existing.supportPhone !== patch.supportPhone;
       if (changed) {
         await ctx.db.patch(existing._id, patch);
         updated++;
@@ -160,6 +171,9 @@ export async function applyPfaSeed(
         status: "ACTIVE",
         integrationStatus: "not_integrated",
         integrationMode: "sandbox_adapter",
+        websiteUrl: seed.websiteUrl,
+        supportEmail: seed.supportEmail,
+        supportPhone: seed.supportPhone,
         active: true,
         createdAt: now,
         updatedAt: now,
@@ -199,7 +213,7 @@ export const seedDirectory = internalMutation({
 /**
  * Data-integrity check: `bun convex run pfaDirectory:verifyIntegrity`.
  * Confirms referential integrity of every PFA reference, uniqueness of the
- * master records, and that exactly the 19 seeded PFAs are active.
+ * master records, and that exactly the seeded PFAs are active.
  */
 export const verifyIntegrity = internalQuery({
   args: {},
