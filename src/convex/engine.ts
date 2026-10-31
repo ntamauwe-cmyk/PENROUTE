@@ -11,7 +11,7 @@ import {
   settlementRailSandboxSubmit,
   pfaAcknowledgeSandbox,
 } from "./adapters";
-import { quoteForPostings } from "./pricing";
+import { quoteForEmployer } from "./pricing";
 import { markChargeFailed, markChargePaid, syncBillingCharge } from "./billing";
 import { hashApiKey, randRef } from "../lib/security";
 import { sandboxModeEnabled } from "./environment";
@@ -123,7 +123,7 @@ export const getDraftSummary = query({
     const employeeSum = valid.reduce((s, r) => s + r.employeeContribution, 0);
     const employerSum = valid.reduce((s, r) => s + r.employerContribution, 0);
     const pension = employeeSum + employerSum;
-    const quote = await quoteForPostings(ctx, valid.length);
+    const quote = await quoteForEmployer(ctx, employer._id, valid.length);
     const feePerEmployee = quote.feePerPostingKobo;
     const fee = quote.processingFeeKobo;
 

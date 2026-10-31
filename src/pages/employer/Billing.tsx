@@ -29,11 +29,12 @@ function AdminBillingControls() {
       <div className="pen-card flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
         <p>
           <span className="font-semibold">Billing management.</span> Change the per-employee fee here.
-          Tier ranges, subscription plans and employer subscriptions are under Pricing.
+          Fee tiers, negotiated employer rates, subscription plans and plan assignments are under
+          Pricing &amp; billing.
         </p>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => navigate("/admin/pricing")}>
-            Tiers & subscription plans
+            All pricing &amp; billing settings
           </Button>
           <Button size="sm" variant="outline" onClick={() => navigate("/admin/revenue")}>
             Revenue
