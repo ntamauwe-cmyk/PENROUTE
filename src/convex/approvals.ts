@@ -16,6 +16,7 @@ import {
   apply_updateTier,
 } from "./pricing";
 import { apply_flatFee } from "./admin";
+import { apply_paymentCharges } from "./paymentCharges";
 
 // ============================================================================
 // PRICING APPROVALS — the checker side of maker-checker. Only an admin with
@@ -48,6 +49,8 @@ async function execute(ctx: MutationCtx, kind: PricingChangeKind, a: never, acto
       return apply_setPlanActive(ctx, a, actor);
     case "employerRate":
       return apply_employerRate(ctx, a, actor);
+    case "paymentCharges":
+      return apply_paymentCharges(ctx, a, actor);
     default:
       throw new ConvexError("Unknown pricing change");
   }

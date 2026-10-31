@@ -12,7 +12,9 @@ import {
   pfaAcknowledgeSandbox,
 } from "./adapters";
 import { quoteForEmployer } from "./pricing";
-import { markChargeFailed, markChargePaid, syncBillingCharge } from "./billing";
+import { markChargeFailed, markChargeInvoiced, markChargePaid, syncBillingCharge } from "./billing";
+import { readPaymentCharges } from "./paymentCharges";
+import { processingChargeKobo, type PayMethod } from "../lib/paymentCharges";
 import { hashApiKey, randRef } from "../lib/security";
 import { sandboxModeEnabled } from "./environment";
 import { notify } from "./notifications";
@@ -39,6 +41,22 @@ export async function getActivePayment(
 
 /** Rail mode: live (Paystack) or sandbox. Sandbox is only honoured on
  *  deployments that explicitly opt in (PENROUTE_SANDBOX_MODE=enabled). */
+/** Payment route: "direct" (Penroute collects via its own Paystack account)
+ *  or "partner" (a PenCom-approved provider collects and remits). */
+export async function resolvePaymentRoute(ctx: { db: QueryCtx["db"] }): Promise<"direct" | "partner"> {
+  const row = await ctx.db
+    .query("systemConfig")
+    .withIndex("by_key", (q) => q.eq("key", "payment_route"))
+    .first();
+  return row?.value === 1 ? "partner" : "direct";
+}
+
+/** The active approved provider, if one is configured. */
+export async function getActivePartner(ctx: { db: QueryCtx["db"] }): Promise<Doc<"remittancePartners"> | null> {
+  const all = await ctx.db.query("remittancePartners").take(50);
+  return all.find((p) => p.active) ?? null;
+}
+
 export async function resolveRailMode(ctx: MutationCtx): Promise<"live" | "sandbox" | "unavailable"> {
   const live = (await getSystemValue(ctx, "rail_mode", 0)) === 1;
   if (live) return "live";
@@ -503,8 +521,13 @@ async function createBatchCore(
 // ============================================================================
 
 export const payBatch = mutation({
-  args: { batchId: v.id("contributionBatches") },
-  handler: async (ctx, { batchId }) => {
+  args: {
+    batchId: v.id("contributionBatches"),
+    // How the employer pays on the direct route. Card carries the card
+    // processing charge (set by the super admin); bank transfer is cheaper.
+    method: v.optional(v.union(v.literal("bank"), v.literal("card"))),
+  },
+  handler: async (ctx, { batchId, method: chosenMethod }) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new ConvexError("Not authenticated");
     const employer = await getEmployerForEngine(ctx, user);
@@ -535,7 +558,13 @@ export const payBatch = mutation({
     });
     const feePerEmployee = charge.feePerPostingKobo;
     const fee = charge.processingFeeKobo;
-    const totalDebit = pension + fee;
+    const route = await resolvePaymentRoute(ctx);
+    const method: PayMethod = chosenMethod ?? "bank";
+    // Gateway processing charge — borne by the employer who picks the method
+    // (direct route only; on the partner route the provider sets its own).
+    const processingCharge =
+      route === "direct" ? processingChargeKobo(pension + fee, method, await readPaymentCharges(ctx)) : 0;
+    const totalDebit = pension + fee + processingCharge;
 
     let paymentRef = randRef("PMT", 8);
     // Database-level uniqueness for the provider-facing reference: a collision
@@ -558,6 +587,88 @@ export const payBatch = mutation({
       return { paymentRef: existingPayment.paymentRef, alreadyPaid: true as const };
     }
 
+    // ---- APPROVED-PROVIDER ROUTE (PenCom PCRS PSSP) ----
+    // Penroute never holds the pension money: the employer pays on the
+    // partner's platform using Penroute's validated schedule. The payment is
+    // recorded "initiated" and only becomes successful when the partner's
+    // signed webhook, or a Penroute admin checking the partner's records,
+    // confirms it (remittancePartner.ts). Penroute's own service charge is
+    // invoiced separately — it is not collected with the pension.
+    if (route === "partner") {
+      const partner = await getActivePartner(ctx);
+      if (!partner) {
+        throw new ConvexError(
+          "Payments go through an approved provider, but none is configured yet. A platform administrator must set up the provider first.",
+        );
+      }
+      if (
+        existingPayment &&
+        existingPayment.rail === "pssp_partner" &&
+        (existingPayment.status === "initiated" || existingPayment.status === "processing")
+      ) {
+        return {
+          requiresPartner: true as const,
+          paymentRef: existingPayment.paymentRef,
+          amountKobo: existingPayment.amount,
+          partnerName: existingPayment.partnerName ?? partner.name,
+          batchId,
+        };
+      }
+      // A Paystack checkout left open from before the switch is superseded.
+      if (existingPayment && existingPayment.status === "initiated") {
+        await ctx.db.patch(existingPayment._id, {
+          status: "failed",
+          failureReason: "Replaced: payments now go through the approved provider",
+        });
+      }
+      await ctx.db.insert("payments", {
+        batchId,
+        employerId: employer._id,
+        paymentRef,
+        idempotencyKey,
+        amount: pension,
+        pensionAmount: pension,
+        platformFee: fee,
+        rail: "pssp_partner",
+        status: "initiated",
+        initiatedAt: Date.now(),
+        partnerCode: partner.code,
+        partnerName: partner.name,
+        processingCharge: 0,
+      });
+      await ctx.db.patch(batchId, {
+        paymentStatus: "initiated",
+        totalEmployeeContribution: employeeSum,
+        totalEmployerContribution: employerSum,
+        totalPensionAmount: pension,
+        platformFee: fee,
+        processingCharge: 0,
+        totalDebit: pension,
+      });
+      await audit(ctx, {
+        actor: user.email ?? "unknown",
+        action: "payment_initiated",
+        entityType: "payment",
+        entityId: paymentRef,
+        employerId: employer._id,
+        batchId,
+        details: `Remittance of ₦${(pension / 100).toLocaleString()} routed to approved provider ${partner.name}`,
+      });
+      await webhookEvent(ctx, {
+        employerId: employer._id,
+        batchId,
+        eventType: "payment.initiated",
+        payload: JSON.stringify({ paymentRef, amountKobo: pension, rail: "pssp_partner", partner: partner.code }),
+      });
+      return {
+        requiresPartner: true as const,
+        paymentRef,
+        amountKobo: pension,
+        partnerName: partner.name,
+        batchId,
+      };
+    }
+
     const railMode = await resolveRailMode(ctx);
     if (railMode === "unavailable") {
       throw new ConvexError(
@@ -569,13 +680,28 @@ export const payBatch = mutation({
       // ---- LIVE RAIL: initiate checkout; confirmation happens in
       // confirmLivePayment → finalizeLivePayment after provider verification ----
       if (existingPayment && (existingPayment.status === "initiated" || existingPayment.status === "processing")) {
-        return {
-          requiresCheckout: true as const,
-          paymentRef: existingPayment.paymentRef,
-          amountKobo: existingPayment.amount,
-          payerEmail: employer.contactEmail,
-          batchId,
-        };
+        const sameChoice =
+          existingPayment.rail === "paystack" &&
+          (existingPayment.payMethod ?? "bank") === method &&
+          existingPayment.amount === totalDebit;
+        if (sameChoice || existingPayment.status === "processing") {
+          return {
+            requiresCheckout: true as const,
+            paymentRef: existingPayment.paymentRef,
+            amountKobo: existingPayment.amount,
+            payerEmail: employer.contactEmail,
+            payMethod: (existingPayment.payMethod ?? "bank") as PayMethod,
+            processingChargeKobo: existingPayment.processingCharge ?? 0,
+            batchId,
+          };
+        }
+        // Employer switched card ↔ bank transfer (different amount): replace
+        // the unpaid checkout. If the old one is somehow paid later, the
+        // webhook still records it and supersedes this one (never lost).
+        await ctx.db.patch(existingPayment._id, {
+          status: "failed",
+          failureReason: "Replaced: employer changed the payment method",
+        });
       }
       const paymentId = await ctx.db.insert("payments", {
         batchId,
@@ -588,6 +714,8 @@ export const payBatch = mutation({
         rail: "paystack",
         status: "initiated",
         initiatedAt: Date.now(),
+        payMethod: method,
+        processingCharge,
       });
       await ctx.db.patch(batchId, {
         paymentStatus: "initiated",
@@ -595,6 +723,7 @@ export const payBatch = mutation({
         totalEmployerContribution: employerSum,
         totalPensionAmount: pension,
         platformFee: fee,
+        processingCharge,
         totalDebit,
       });
       await audit(ctx, {
@@ -610,7 +739,7 @@ export const payBatch = mutation({
         employerId: employer._id,
         batchId,
         eventType: "payment.initiated",
-        payload: JSON.stringify({ paymentRef, amountKobo: totalDebit, rail: "paystack" }),
+        payload: JSON.stringify({ paymentRef, amountKobo: totalDebit, rail: "paystack", method }),
       });
       void paymentId;
       return {
@@ -618,6 +747,8 @@ export const payBatch = mutation({
         paymentRef,
         amountKobo: totalDebit,
         payerEmail: employer.contactEmail,
+        payMethod: method,
+        processingChargeKobo: processingCharge,
         batchId,
       };
     }
@@ -650,6 +781,8 @@ export const payBatch = mutation({
       providerRef: railResult.providerRef ?? undefined,
       initiatedAt: Date.now(),
       confirmedAt: Date.now(),
+      payMethod: method,
+      processingCharge,
     });
 
     await recordSuccessfulPayment(ctx, {
@@ -669,8 +802,9 @@ export const payBatch = mutation({
   },
 });
 
-/** Shared: write the double-entry ledger + flip the batch to processing. */
-async function recordSuccessfulPayment(
+/** Shared: write the double-entry ledger + flip the batch to processing.
+ *  Exported for the approved-provider confirmation path (remittancePartner.ts). */
+export async function recordSuccessfulPayment(
   ctx: Parameters<typeof audit>[0],
   opts: {
     batchId: Id<"contributionBatches">;
@@ -692,11 +826,16 @@ async function recordSuccessfulPayment(
   const employerSum = opts.valid.reduce((s, r) => s + r.employerContribution, 0);
   const pension = employeeSum + employerSum;
   const fee = opts.valid.length * opts.feePerEmployee;
-  const totalDebit = pension + fee;
   const now = Date.now();
 
   const payment = await ctx.db.get(opts.paymentId);
   if (!payment || payment.batchId !== opts.batchId) throw new ConvexError("Payment does not belong to this batch");
+  // On the approved-provider route the pension went through the partner and
+  // Penroute's fee is invoiced separately (not part of this money movement).
+  const viaPartner = payment.rail === "pssp_partner";
+  const processingCharge = payment.processingCharge ?? 0;
+  const collectedFee = viaPartner ? 0 : fee;
+  const totalDebit = pension + collectedFee + processingCharge;
   // Any other open checkout attempt for this batch is now superseded.
   const attempts = await ctx.db
     .query("payments")
@@ -720,8 +859,13 @@ async function recordSuccessfulPayment(
       pfaId: g.pfaId as Id<"pfas"> | undefined,
       narration: `Pension allocation → PFA ${g.pfaCode} (${g.count} employees)`,
     })),
-    { account: "platform_revenue", debit: 0, credit: fee, pfaId: undefined, narration: `Penroute processing fee ${opts.valid.length} × ₦${(opts.feePerEmployee / 100).toFixed(2)} (technology/service charge — not a pension contribution)` },
-    { account: "clearing", debit: 0, credit: pension, pfaId: undefined, narration: `Pension clearing ${opts.paymentRef}` },
+    ...(collectedFee > 0
+      ? [{ account: "platform_revenue", debit: 0, credit: collectedFee, pfaId: undefined as Id<"pfas"> | undefined, narration: `Penroute processing fee ${opts.valid.length} × ₦${(opts.feePerEmployee / 100).toFixed(2)} (technology/service charge — not a pension contribution)` }]
+      : []),
+    ...(processingCharge > 0
+      ? [{ account: "processing_charge_recovery", debit: 0, credit: processingCharge, pfaId: undefined as Id<"pfas"> | undefined, narration: `${payment.payMethod === "card" ? "Card" : "Payment"} processing charge paid by employer (covers the payment gateway's fee — not revenue, not pension)` }]
+      : []),
+    { account: "clearing", debit: 0, credit: pension, pfaId: undefined, narration: viaPartner ? `Pension remitted through approved provider ${payment.partnerName ?? ""} ${opts.paymentRef}` : `Pension clearing ${opts.paymentRef}` },
     { account: "clearing", debit: pension, credit: 0, pfaId: undefined, narration: `Pension clearing offset ${opts.paymentRef}` },
   ];
   for (const row of rows) {
@@ -756,6 +900,7 @@ async function recordSuccessfulPayment(
     totalEmployerContribution: employerSum,
     totalPensionAmount: pension,
     platformFee: fee,
+    processingCharge,
     totalDebit,
   });
 
@@ -766,7 +911,7 @@ async function recordSuccessfulPayment(
     entityId: opts.paymentRef,
     employerId: opts.employerId,
     batchId: opts.batchId,
-    details: `₦${(totalDebit / 100).toLocaleString()} via ${opts.rail} (pension ₦${(pension / 100).toLocaleString()} + fee ₦${(fee / 100).toLocaleString()})`,
+    details: `₦${(totalDebit / 100).toLocaleString()} via ${viaPartner ? `approved provider ${payment.partnerName ?? ""}` : opts.rail} (pension ₦${(pension / 100).toLocaleString()}${collectedFee ? ` + fee ₦${(collectedFee / 100).toLocaleString()}` : ""}${processingCharge ? ` + ${payment.payMethod === "card" ? "card" : "processing"} charge ₦${(processingCharge / 100).toLocaleString()}` : ""}${viaPartner && fee ? `; Penroute fee ₦${(fee / 100).toLocaleString()} invoiced separately` : ""})`,
   });
   await webhookEvent(ctx, {
     employerId: opts.employerId,
@@ -776,13 +921,16 @@ async function recordSuccessfulPayment(
   });
 
   // Recognise the billing charge as revenue only now that payment is confirmed.
-  await markChargePaid(ctx, { batchId: opts.batchId, paymentRef: opts.paymentRef });
+  if (viaPartner) await markChargeInvoiced(ctx, { batchId: opts.batchId, paymentRef: opts.paymentRef });
+  else await markChargePaid(ctx, { batchId: opts.batchId, paymentRef: opts.paymentRef });
   await notify(ctx, {
     audience: "employer",
     employerId: opts.employerId,
     kind: "payment_confirmed",
     title: "Payment confirmed",
-    body: `We received ₦${(totalDebit / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} (ref ${opts.paymentRef}). Contributions are now being remitted to your employees' PFAs; you'll be notified when every PFA confirms posting.`,
+    body: viaPartner
+      ? `${payment.partnerName ?? "The approved provider"} confirmed your remittance of ₦${(totalDebit / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} (ref ${opts.paymentRef}). You'll be notified when every PFA confirms posting.`
+      : `We received ₦${(totalDebit / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} (ref ${opts.paymentRef}). Contributions are now being remitted to your employees' PFAs; you'll be notified when every PFA confirms posting.`,
     link: "/dashboard/batches",
   });
 

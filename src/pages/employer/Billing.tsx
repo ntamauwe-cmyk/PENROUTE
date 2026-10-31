@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { DashboardShell } from "@/components/DashboardShell";
 import { FeeManagement } from "@/components/FeeManagement";
+import { PaymentChargesManagement } from "@/components/PaymentChargesManagement";
 import { PricingApprovals } from "@/components/PricingApprovals";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
@@ -42,6 +43,7 @@ function AdminBillingControls() {
         </div>
       </div>
       <FeeManagement />
+      <PaymentChargesManagement />
       <PricingApprovals />
     </>
   );

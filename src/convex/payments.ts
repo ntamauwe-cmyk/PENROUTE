@@ -109,7 +109,11 @@ export const initializeLivePayment = action({
           amount: amountKobo, // Paystack expects kobo
           email,
           currency: "NGN",
-          metadata: { purpose: "pension_contribution", paymentRef },
+          // The amount was priced for the method the employer chose (card
+          // carries the card processing charge), so the checkout only offers
+          // that method — a card can't be used on a bank-transfer price.
+          channels: stored.payMethod === "card" ? ["card"] : ["bank_transfer", "bank", "ussd"],
+          metadata: { purpose: "pension_contribution", paymentRef, payMethod: stored.payMethod ?? "bank" },
         }),
       });
       const data = (await res.json()) as {

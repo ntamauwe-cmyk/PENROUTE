@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PaymentCertificate } from "@/components/PaymentCertificate";
+import { PartnerPaymentPanel } from "@/components/PartnerPaymentPanel";
+import { friendlyError } from "@/lib/errors";
+import { toast } from "sonner";
 import { DashboardShell } from "@/components/DashboardShell";
 import { ClayTable, LoadingBlock, PageHeader, StatusPill } from "@/components/pension-ui";
 import { FileText } from "lucide-react";
@@ -21,6 +24,18 @@ export default function Batches() {
   const batches = useMemo(() => dash?.batches ?? [], [dash]);
   const loading = dash === undefined;
   const [certBatchId, setCertBatchId] = useState<string | null>(null);
+  // Approved-provider route: reopen the remittance instructions for an unpaid batch.
+  const route = useQuery(api.remittancePartner.getEmployerRoute);
+  const startPay = useMutation(api.engine.payBatch);
+  const [partnerBatchId, setPartnerBatchId] = useState<Id<"contributionBatches"> | null>(null);
+  const openPartner = async (id: Id<"contributionBatches">) => {
+    try {
+      await startPay({ batchId: id });
+      setPartnerBatchId(id);
+    } catch (e) {
+      toast.error(friendlyError(e));
+    }
+  };
   const detail = useQuery(
     api.pension.getBatchDetail,
     certBatchId ? { batchId: certBatchId as Id<"contributionBatches"> } : "skip",
@@ -75,6 +90,11 @@ export default function Batches() {
               </td>
               <td className="px-3 py-2.5 text-muted-foreground">{fmtDate(b.paymentDate)}</td>
               <td className="px-3 py-2.5 text-right">
+                {b.status === "awaiting_payment" && route?.route === "partner" && (
+                  <Button size="sm" variant="outline" onClick={() => void openPartner(b._id)}>
+                    Remit via {route.partner?.name ?? "provider"}
+                  </Button>
+                )}
                 {b.status === "completed" && (
                   <Button size="sm" variant="ghost" onClick={() => setCertBatchId(b._id)}>
                     <FileText className="size-4" /> Certificate
@@ -85,6 +105,16 @@ export default function Batches() {
           ))}
         </ClayTable>
       )}
+
+      <Dialog open={!!partnerBatchId} onOpenChange={(open) => !open && setPartnerBatchId(null)}>
+        <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Remit through the approved provider</DialogTitle>
+            <DialogDescription>Pay on the provider's platform, then record their reference here.</DialogDescription>
+          </DialogHeader>
+          {partnerBatchId && <PartnerPaymentPanel batchId={partnerBatchId} />}
+        </DialogContent>
+      </Dialog>
 
       {/* Certificate dialog */}
       <Dialog open={!!certBatchId} onOpenChange={(open) => !open && setCertBatchId(null)}>

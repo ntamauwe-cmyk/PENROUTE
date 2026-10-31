@@ -16,6 +16,8 @@ import { KybDocumentsReview } from "@/components/KybDocuments";
 import { PfaPicker } from "@/components/PfaPicker";
 import { AdminTeam, PricingApprovals } from "@/components/PricingApprovals";
 import { FeeManagement } from "@/components/FeeManagement";
+import { PaymentChargesManagement } from "@/components/PaymentChargesManagement";
+import { PartnerConfirmations, PaymentRouteSettings } from "@/components/RemittanceRoute";
 import {
   CheckCircle2,
   Database,
@@ -321,6 +323,8 @@ function AdminConsoleBody() {
             </div>
           </section>
 
+          <PaymentRouteSettings />
+          <PartnerConfirmations />
           <PricingApprovals />
           <AdminTeam />
 
@@ -479,6 +483,7 @@ function AdminConsoleBody() {
           </section>
 
           <FeeManagement />
+          <PaymentChargesManagement />
 
           {/* Employers */}
           <section>

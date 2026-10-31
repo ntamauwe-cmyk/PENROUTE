@@ -159,7 +159,8 @@ const schema = defineSchema(
       totalEmployerContribution: v.number(),
       totalPensionAmount: v.number(),
       platformFee: v.number(), // fee in kobo
-      totalDebit: v.number(), // pension + fee
+      totalDebit: v.number(), // pension + fee (+ processing charge)
+      processingCharge: v.optional(v.number()), // gateway charge passed to the employer (kobo)
       status: v.string(), // draft | awaiting_payment | processing | completed | failed
       paymentStatus: v.string(), // pending | initiated | processing | successful | failed | reversed
       allocationStatus: v.string(), // pending | validated | allocating | partially_allocated | allocated | allocation_failed
@@ -225,9 +226,23 @@ const schema = defineSchema(
       failureReason: v.optional(v.string()),
       initiatedAt: v.number(),
       confirmedAt: v.optional(v.number()),
+      // How the employer chose to pay ("bank" | "card") and the gateway
+      // processing charge passed on to them (kobo, included in `amount`).
+      payMethod: v.optional(v.string()),
+      processingCharge: v.optional(v.number()),
+      // Approved-provider (PSSP) route: the partner moves the money; the
+      // employer pays on the partner's platform and Penroute records the
+      // partner's reference. Confirmed only by the partner's signed webhook
+      // or by a Penroute admin checking the partner's records.
+      partnerCode: v.optional(v.string()),
+      partnerName: v.optional(v.string()),
+      partnerRef: v.optional(v.string()),
+      declaredAt: v.optional(v.number()),
+      confirmedBy: v.optional(v.string()),
     })
       .index("by_batch", ["batchId"])
       .index("by_employer", ["employerId"])
+      .index("by_rail_status", ["rail", "status"])
       .index("by_ref", ["paymentRef"])
       .index("by_idem", ["idempotencyKey"]),
 
@@ -290,6 +305,25 @@ const schema = defineSchema(
       .index("by_ref", ["entryRef"]),
 
     // Platform fee configuration — admin configurable, never hard-coded
+    // Approved remittance provider (PenCom PCRS PSSP) Penroute partners with.
+    // One row per provider configured; the active one is used when the
+    // payment route is "partner". Secrets never leave the server.
+    remittancePartners: defineTable({
+      code: v.string(),
+      name: v.string(),
+      // portal: employer pays on the partner's platform with Penroute's schedule
+      // api: Penroute submits the schedule to the partner's API (adapter per spec)
+      mode: v.string(),
+      portalUrl: v.optional(v.string()),
+      apiEndpoint: v.optional(v.string()),
+      apiSecret: v.optional(v.string()),
+      webhookSecret: v.optional(v.string()),
+      agreementRef: v.optional(v.string()),
+      active: v.boolean(),
+      updatedAt: v.number(),
+      updatedBy: v.string(),
+    }).index("by_code", ["code"]),
+
     systemConfig: defineTable({
       key: v.string(),
       value: v.number(),

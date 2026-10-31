@@ -176,6 +176,22 @@ export async function markChargePaid(
   });
 }
 
+/** Approved-provider route: the pension went through the partner, so
+ *  Penroute's service charge was NOT collected with it. It becomes an
+ *  outstanding invoice (status "invoiced") — never revenue until paid. */
+export async function markChargeInvoiced(
+  ctx: MutationCtx,
+  args: { batchId: Doc<"contributionBatches">["_id"]; paymentRef: string },
+): Promise<void> {
+  const charge = await ctx.db
+    .query("billingCharges")
+    .withIndex("by_batch", (q) => q.eq("batchId", args.batchId))
+    .first();
+  if (charge && (charge.status === "pending" || charge.status === "failed")) {
+    await ctx.db.patch(charge._id, { status: "invoiced", paymentRef: args.paymentRef });
+  }
+}
+
 /** Mark a charge failed (payment declined) — never counts as revenue. */
 export async function markChargeFailed(
   ctx: MutationCtx,
