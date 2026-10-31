@@ -15,6 +15,7 @@ import { SettlementConfirmations } from "@/components/SettlementConfirmations";
 import { KybDocumentsReview } from "@/components/KybDocuments";
 import { PfaPicker } from "@/components/PfaPicker";
 import { AdminTeam, PricingApprovals } from "@/components/PricingApprovals";
+import { FeeManagement } from "@/components/FeeManagement";
 import {
   CheckCircle2,
   Database,
@@ -96,7 +97,6 @@ function AdminConsoleBody() {
   const exceptions = useQuery(api.admin.listAllExceptions);
   const railStatus = useAction(api.payments.railStatus);
 
-  const updateFee = useMutation(api.admin.adminUpdateFee);
   const setRailMode = useMutation(api.admin.adminSetRailMode);
   const setEmployerStatus = useMutation(api.admin.adminSetEmployerStatus);
   const setPfaIntegration = useMutation(api.admin.adminSetPfaIntegration);
@@ -114,19 +114,6 @@ function AdminConsoleBody() {
   const [pfaOperatorPfaId, setPfaOperatorPfaId] = useState<string>("");
   const [grantBusy, setGrantBusy] = useState(false);
 
-  // null = no local edit yet — the input shows the LIVE rate from the
-  // central pricing engine (what quotes and billing actually charge).
-  const [fee, setFee] = useState<string | null>(null);
-  const [editingFee, setEditingFee] = useState(false);
-  const currentFeeKobo = overview?.effectiveFeePerEmployeeKobo ?? overview?.feePerEmployeeKobo;
-  const pricingRequests = useQuery(api.approvals.listPricingRequests);
-  const pendingFee = pricingRequests?.pending.find((r) => r.kind === "flatFee");
-  const feeValue =
-    fee ??
-    (() => {
-      const k = overview?.effectiveFeePerEmployeeKobo ?? overview?.feePerEmployeeKobo;
-      return k === undefined ? "" : String(k / 100);
-    })();
   const [rail, setRail] = useState<{ mode: string; configured: boolean } | null>(null);
   const [checkingRail, setCheckingRail] = useState(true); // status fetch starts on mount
   const [busy, setBusy] = useState(false);
@@ -200,32 +187,6 @@ function AdminConsoleBody() {
     }
   };
 
-  const saveFee = async () => {
-    const naira = Number(feeValue.replace(/[₦,\s]/g, ""));
-    const n = Math.round(naira * 100); // naira → kobo (stored precisely)
-    if (!feeValue.trim() || !Number.isFinite(naira) || naira < 0 || naira > 100_000) {
-      toast.error("Enter the fee in naira, e.g. 9 or 9.50");
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await updateFee({ perEmployeeFeeKobo: n });
-      const amount = `₦${(n / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
-      if ("pending" in res) {
-        toast.success("Fee change submitted for approval", {
-          description: `${amount} per employee takes effect once the super admin or an assigned approver approves it.`,
-        });
-      } else {
-        toast.success(`Fee updated to ${amount} per employee — applied to every active pricing tier`);
-      }
-      setEditingFee(false);
-      setFee(null);
-    } catch (e) {
-      toast.error(friendlyError(e, "Update failed"));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   // The PLATFORM rail comes from the database (what payBatch actually uses).
   // railStatus only describes the configured Paystack key (test vs live).
@@ -517,74 +478,7 @@ function AdminConsoleBody() {
             )}
           </section>
 
-          {/* Fee management */}
-          <section className="pen-card-lg p-6">
-            <h2 className="font-bold tracking-tight">Fee management</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Per-employee contribution processing fee, applied to every active pricing tier,
-              quotes, Billing and the public pricing page. Only the super admin changes it
-              directly; any other administrator's change waits for approval by the super admin or
-              an approver they assigned.
-            </p>
-            {!editingFee ? (
-              <div className="mt-4 flex flex-wrap items-center gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Current fee per employee
-                  </p>
-                  <p className="text-2xl font-bold tabular-nums">
-                    {currentFeeKobo === undefined ? "—" : fmtNaira(currentFeeKobo)}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  className="font-semibold"
-                  disabled={Boolean(pendingFee)}
-                  onClick={() => {
-                    setFee(currentFeeKobo === undefined ? "" : String(currentFeeKobo / 100));
-                    setEditingFee(true);
-                  }}
-                >
-                  Change fee
-                </Button>
-                {pendingFee && (
-                  <p className="text-sm text-[#7A5A10]">
-                    A change is awaiting approval: {pendingFee.summary}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-wrap items-end gap-3">
-                <div className="w-40">
-                  <Label htmlFor="fee-naira">New fee per employee (₦)</Label>
-                  <div className="relative mt-1.5">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₦</span>
-                    <Input
-                      id="fee-naira"
-                      className="pl-7"
-                      autoFocus
-                      value={feeValue}
-                      onChange={(e) => setFee(e.target.value)}
-                      inputMode="decimal"
-                      placeholder="9.00"
-                    />
-                  </div>
-                </div>
-                <Button className="font-semibold" onClick={saveFee} disabled={busy}>
-                  {pricingRequests?.isSuperAdmin ? "Save new fee" : "Submit for approval"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setEditingFee(false);
-                    setFee(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-          </section>
+          <FeeManagement />
 
           {/* Employers */}
           <section>

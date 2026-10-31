@@ -1,6 +1,10 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { DashboardShell } from "@/components/DashboardShell";
+import { FeeManagement } from "@/components/FeeManagement";
+import { PricingApprovals } from "@/components/PricingApprovals";
+import { useAuth } from "@/hooks/use-auth";
+import { useNavigate } from "react-router";
 import {
   ClayTable,
   LoadingBlock,
@@ -17,8 +21,35 @@ function periodLabel(periodKey: string): string {
   return `${monthName(m)} ${y}`;
 }
 
+/** Penroute administrators manage billing here: the fee, approvals and plans. */
+function AdminBillingControls() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <div className="pen-card flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+        <p>
+          <span className="font-semibold">Billing management.</span> Change the per-employee fee here.
+          Tier ranges, subscription plans and employer subscriptions are under Pricing.
+        </p>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => navigate("/admin/pricing")}>
+            Tiers & subscription plans
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate("/admin/revenue")}>
+            Revenue
+          </Button>
+        </div>
+      </div>
+      <FeeManagement />
+      <PricingApprovals />
+    </>
+  );
+}
+
 export default function Billing() {
   const billing = useQuery(api.billing.getEmployerBilling);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   if (billing === undefined) {
     return (
@@ -30,10 +61,17 @@ export default function Billing() {
   if (billing === null) {
     return (
       <DashboardShell>
-        <PageHeader title="Billing" description="Penroute service charges and usage." />
-        <div className="pen-card p-8 text-center text-sm text-muted-foreground">
-          No employer profile found. Complete onboarding to view billing.
-        </div>
+        <PageHeader
+          title="Billing"
+          description={isAdmin ? "Manage what Penroute charges employers." : "Penroute service charges and usage."}
+        />
+        {isAdmin ? (
+          <AdminBillingControls />
+        ) : (
+          <div className="pen-card p-8 text-center text-sm text-muted-foreground">
+            No employer profile found. Complete onboarding to view billing.
+          </div>
+        )}
       </DashboardShell>
     );
   }
@@ -116,6 +154,8 @@ export default function Billing() {
           </Button>
         }
       />
+
+      {isAdmin && <AdminBillingControls />}
 
       {/* ---------------- Current billing period ---------------- */}
       <section className="pen-card-lg p-6">
