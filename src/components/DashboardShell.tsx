@@ -38,7 +38,7 @@ const EMPLOYER_NAV: NavItem[] = [
   { to: "/onboarding", label: "Register company", icon: Users, group: "Control" },
   // Administrator-only pricing & revenue (filtered out for non-admins below).
   { to: "/admin", label: "Admin console", icon: ShieldCheck, group: "Control" },
-  { to: "/admin/pricing", label: "Pricing", icon: Receipt, group: "Control" },
+  { to: "/admin/pricing", label: "Pricing & billing", icon: Receipt, group: "Control" },
   { to: "/admin/revenue", label: "Revenue", icon: BarChart3, group: "Control" },
 ];
 

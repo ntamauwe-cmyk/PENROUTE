@@ -4,10 +4,11 @@ import type { MutationCtx } from "./_generated/server";
 import { getCurrentUser } from "./users";
 import { audit } from "./employers";
 import { notify } from "./notifications";
-import type { PricingChangeKind } from "./approvalCore";
+import { isSuperAdmin, type PricingChangeKind } from "./approvalCore";
 import { bootstrapAdminEmails } from "./environment";
 import {
   apply_createPlan,
+  apply_employerRate,
   apply_createTier,
   apply_setPlanActive,
   apply_setTierActive,
@@ -45,6 +46,8 @@ async function execute(ctx: MutationCtx, kind: PricingChangeKind, a: never, acto
       return apply_updatePlan(ctx, a, actor);
     case "setPlanActive":
       return apply_setPlanActive(ctx, a, actor);
+    case "employerRate":
+      return apply_employerRate(ctx, a, actor);
     default:
       throw new ConvexError("Unknown pricing change");
   }
@@ -62,14 +65,17 @@ export const listPricingRequests = query({
     const recent = (await ctx.db.query("pricingChangeRequests").order("desc").take(30)).filter(
       (r) => r.status !== "pending",
     );
+    const sup = await isSuperAdmin(ctx, user);
     const tag = (r: (typeof pending)[number]) => ({
       ...r,
       mine: r.proposedBy === user._id,
-      canApprove: Boolean(user.pricingApprover || user.superAdmin) && r.proposedBy !== user._id && r.status === "pending",
+      // The super admin may approve anything (including their own earlier
+      // proposals); assigned approvers never approve their own.
+      canApprove: r.status === "pending" && (sup || (Boolean(user.pricingApprover) && r.proposedBy !== user._id)),
     });
     return {
-      isApprover: Boolean(user.pricingApprover || user.superAdmin),
-      isSuperAdmin: Boolean(user.superAdmin),
+      isApprover: sup || Boolean(user.pricingApprover),
+      isSuperAdmin: sup,
       pending: pending.map(tag),
       recent: recent.slice(0, 15).map(tag),
     };
@@ -80,13 +86,14 @@ export const approvePricingChange = mutation({
   args: { requestId: v.id("pricingChangeRequests"), note: v.optional(v.string()) },
   handler: async (ctx, { requestId, note }) => {
     const user = await requireAdmin(ctx);
-    if (!user.pricingApprover && !user.superAdmin) {
+    const sup = await isSuperAdmin(ctx, user);
+    if (!user.pricingApprover && !sup) {
       throw new ConvexError("Only the super admin or an administrator they assigned can approve pricing changes");
     }
     const req = await ctx.db.get(requestId);
     if (!req) throw new ConvexError("Request not found");
     if (req.status !== "pending") throw new ConvexError(`This change was already ${req.status}`);
-    if (req.proposedBy === user._id) {
+    if (req.proposedBy === user._id && !sup) {
       throw new ConvexError("You cannot approve a change you proposed — another approver must approve it");
     }
     const approver = user.email ?? "approver";
@@ -127,7 +134,7 @@ export const rejectPricingChange = mutation({
     if (!req) throw new ConvexError("Request not found");
     if (req.status !== "pending") throw new ConvexError(`This change was already ${req.status}`);
     const own = req.proposedBy === user._id;
-    if (!own && !user.pricingApprover && !user.superAdmin) {
+    if (!own && !user.pricingApprover && !(await isSuperAdmin(ctx, user))) {
       throw new ConvexError("Only the proposer or a fee approver can withdraw or reject this change");
     }
     if (!own && !note.trim()) throw new ConvexError("Give a reason for rejecting the change");
@@ -170,9 +177,10 @@ export const listAdmins = query({
   handler: async (ctx) => {
     const me = await requireAdmin(ctx);
     const users = await ctx.db.query("users").take(10_000);
-    const anySuper = users.some((u) => u.role === "admin" && u.superAdmin);
+    const sup = await isSuperAdmin(ctx, me);
+    const anySuper = sup || users.some((u) => u.role === "admin" && u.superAdmin);
     return {
-      canManage: Boolean(me.superAdmin),
+      canManage: sup,
       // One-time path for deployments created before the super admin existed.
       canClaimApprover: !anySuper && bootstrapAdminEmails().has((me.email ?? "").trim().toLowerCase()),
       admins: users
@@ -180,8 +188,8 @@ export const listAdmins = query({
         .map((u) => ({
           _id: u._id,
           email: u.email ?? "(no email)",
-          pricingApprover: Boolean(u.pricingApprover || u.superAdmin),
-          superAdmin: Boolean(u.superAdmin),
+          pricingApprover: Boolean(u.pricingApprover || u.superAdmin || (sup && u._id === me._id)),
+          superAdmin: Boolean(u.superAdmin || (sup && u._id === me._id)),
           isMe: u._id === me._id,
         }))
         .sort((a, b) => a.email.localeCompare(b.email)),
@@ -197,7 +205,7 @@ export const setAdminAccess = mutation({
   },
   handler: async (ctx, { email, admin, pricingApprover }) => {
     const me = await requireAdmin(ctx);
-    if (!me.superAdmin) {
+    if (!(await isSuperAdmin(ctx, me))) {
       throw new ConvexError("Only the super admin can manage administrators and approval authority");
     }
     const norm = email.trim().toLowerCase();

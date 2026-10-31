@@ -20,7 +20,7 @@ import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/s
 import type { Doc, Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
 import { audit, getEmployerForUser } from "./employers";
-import { loadActivePlans, loadEffectiveTiers, quoteForPostings } from "./pricing";
+import { loadActivePlans, loadEffectiveTiers, quoteForEmployer } from "./pricing";
 import { DEFAULT_SCENARIO_VOLUMES, revenueScenarios } from "../lib/pricing";
 
 // ----------------------------------------------------------------------------
@@ -89,7 +89,7 @@ export async function syncBillingCharge(
     return existing;
   }
 
-  const quote = await quoteForPostings(ctx, args.postingCount);
+  const quote = await quoteForEmployer(ctx, args.batch.employerId, args.postingCount);
   const periodKey = periodKeyOf(args.batch.contributionYear, args.batch.contributionMonth);
   const subscription = await subscriptionForPeriod(ctx, args.batch.employerId, periodKey);
   const subscriptionFeeKobo = subscription?.feeKobo ?? 0;
@@ -291,7 +291,7 @@ export const getEmployerBilling = query({
         .take(10_000);
       const valid = records.filter((r) => r.validationStatus === "valid");
       if (valid.length > 0) {
-        const quote = await quoteForPostings(ctx, valid.length);
+        const quote = await quoteForEmployer(ctx, employer._id, valid.length);
         const pension = valid.reduce((s, r) => s + r.totalAmount, 0);
         pending = {
           batchRef: pendingBatch.batchRef,

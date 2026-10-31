@@ -81,14 +81,15 @@ describe("super admin and maker-checker pricing", () => {
 });
 
 describe("administrator team", () => {
-  test("only the super admin manages admins and approvers; founder claims super admin once", async () => {
+  test("only the super admin manages admins and approvers", async () => {
     vi.stubEnv("PENROUTE_BOOTSTRAP_ADMIN_EMAILS", "founder@penroute.test");
     const founder = await signedInAs(t, { email: "founder@penroute.test", role: "admin" });
     const ops = await signedInAs(t, { email: "ops@penroute.test" });
     const cfo = await signedInAs(t, { email: "cfo@penroute.test" });
-    expect((await founder.client.query(api.approvals.listAdmins, {})).canClaimApprover).toBe(true);
-    await founder.client.mutation(api.approvals.claimApproverAuthority, {});
-    await expect(founder.client.mutation(api.approvals.claimApproverAuthority, {})).rejects.toThrow(/already exists/);
+    // The founding operator is super admin automatically — no claim button.
+    const view = await founder.client.query(api.approvals.listAdmins, {});
+    expect(view.canClaimApprover).toBe(false);
+    expect(view.canManage).toBe(true);
 
     await founder.client.mutation(api.approvals.setAdminAccess, { email: "ops@penroute.test", admin: true, pricingApprover: false });
     await founder.client.mutation(api.approvals.setAdminAccess, { email: "cfo@penroute.test", admin: true, pricingApprover: true });
@@ -112,5 +113,53 @@ describe("administrator team", () => {
     await cfo.client.mutation(api.approvals.approvePricingChange, { requestId: r.requestId });
     expect(await feeKobo()).toBe(1000);
     void ops;
+  });
+});
+
+describe("owner powers and negotiated rates", () => {
+  test("the founding operator is super admin automatically — no claim step", async () => {
+    vi.stubEnv("PENROUTE_BOOTSTRAP_ADMIN_EMAILS", "owner@penroute.net");
+    const owner = await signedInAs(t, { email: "owner@penroute.net", role: "admin" });
+    const res = await owner.client.mutation(api.admin.adminUpdateFee, { perEmployeeFeeKobo: 1250 });
+    expect("applied" in res).toBe(true);
+    expect(await feeKobo()).toBe(1250);
+    expect((await t.run((ctx) => ctx.db.get(owner.userId)))?.superAdmin).toBe(true);
+    expect((await owner.client.query(api.approvals.listAdmins, {})).canManage).toBe(true);
+  });
+
+  test("the super admin can approve their own earlier proposal", async () => {
+    const owner = await signedInAs(t, { email: "owner@penroute.net", role: "admin" });
+    const req = await owner.client.mutation(api.admin.adminUpdateFee, { perEmployeeFeeKobo: 1400 }); // not yet super
+    if (!("pending" in req)) throw new Error("expected proposal");
+    await t.run((ctx) => ctx.db.patch(owner.userId, { superAdmin: true }));
+    await owner.client.mutation(api.approvals.approvePricingChange, { requestId: req.requestId });
+    expect(await feeKobo()).toBe(1400);
+  });
+
+  test("a negotiated employer rate replaces the tier rate on that employer's charges only", async () => {
+    const { superAdmin, ops } = await team();
+    await superAdmin.client.mutation(api.pricing.initializePricing, {});
+    const hr = await signedInAs(t, { email: "hr@acme.test" });
+    const { employerId } = await hr.client.mutation(api.pension.registerEmployer, {
+      name: "Acme", rcNumber: "RC-ACME", tin: "T", registeredAddress: "L", contactEmail: "hr@acme.test",
+      contactPhone: "1", representativeName: "R", acceptTerms: true,
+    });
+    // A regular admin's rate is a proposal.
+    const p = await ops.client.mutation(api.pricing.setEmployerRate, { employerId, feePerPostingKobo: 500 });
+    expect("pending" in p).toBe(true);
+    // The super admin's applies at once and the employer's quote uses it.
+    await superAdmin.client.mutation(api.pricing.setEmployerRate, { employerId, feePerPostingKobo: 650 });
+    const q = await hr.client.query(api.pricing.getQuote, { postings: 10 });
+    expect(q.feePerPostingKobo).toBe(650);
+    expect(q.processingFeeKobo).toBe(6500);
+    expect(q.tierLabel).toMatch(/Negotiated/);
+    const other = await signedInAs(t, { email: "hr@other.test" });
+    await other.client.mutation(api.pension.registerEmployer, {
+      name: "Other", rcNumber: "RC-OTH", tin: "T", registeredAddress: "L", contactEmail: "hr@other.test",
+      contactPhone: "1", representativeName: "R", acceptTerms: true,
+    });
+    expect((await other.client.query(api.pricing.getQuote, { postings: 10 })).feePerPostingKobo).not.toBe(650);
+    await superAdmin.client.mutation(api.pricing.setEmployerRate, { employerId, feePerPostingKobo: null });
+    expect((await hr.client.query(api.pricing.getQuote, { postings: 10 })).tierLabel).not.toMatch(/Negotiated/);
   });
 });

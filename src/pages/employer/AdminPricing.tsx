@@ -21,6 +21,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { CheckCircle2, Loader2, Plus, Receipt, Save, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { PricingApprovals } from "@/components/PricingApprovals";
+import { FeeManagement } from "@/components/FeeManagement";
 
 /**
  * ADMINISTRATOR-ONLY PRICING MANAGEMENT — processing-fee tiers, subscription
@@ -44,6 +45,8 @@ export default function AdminPricing() {
   const setPlanActive = useMutation(api.pricing.setPlanActive);
   const assignSubscription = useMutation(api.pricing.assignSubscription);
   const cancelSubscription = useMutation(api.pricing.cancelSubscription);
+  const setEmployerRate = useMutation(api.pricing.setEmployerRate);
+  const [rateEdits, setRateEdits] = useState<Record<string, string>>({});
 
   const initRef = useRef(false);
   useEffect(() => {
@@ -88,8 +91,6 @@ export default function AdminPricing() {
     return (
       <DashboardShell>
         <PageHeader title="Pricing" />
-
-      <PricingApprovals />
         <div className="pen-card p-8 text-center text-sm text-muted-foreground">
           Administrator access is required to manage pricing.
         </div>
@@ -167,8 +168,11 @@ export default function AdminPricing() {
     <DashboardShell>
       <PageHeader
         title="Pricing & billing configuration"
-        description="Central processing-fee tiers and platform subscription plans. Changes are versioned, take effect immediately, and are fully audited — completed transactions keep their original pricing."
+        description="Everything Penroute charges: the per-employee fee, size-based fee tiers, negotiated employer rates and subscription plans. The super admin's changes apply immediately; other administrators' changes wait for approval. Every change is versioned and audited, and completed transactions keep their original pricing."
       />
+
+      <FeeManagement />
+      <PricingApprovals />
 
       {/* ---------------- Active rate card ---------------- */}
       <section className="pen-card-lg p-6">
@@ -566,6 +570,95 @@ export default function AdminPricing() {
             </Button>
           </div>
         </div>
+      </section>
+
+      {/* ---------------- Negotiated employer rates ---------------- */}
+      <section className="pen-card-lg p-6">
+        <h2 className="mb-1 text-sm font-bold tracking-tight">Negotiated employer rates</h2>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Give a specific employer its own processing fee per employee (a discount or a premium). It
+          replaces the tier rate on that employer's next charges; past charges keep their original price.
+        </p>
+        {pricing.employers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No active employers yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-3 py-2">Employer</th>
+                  <th className="px-3 py-2">Current rate</th>
+                  <th className="px-3 py-2">New rate per employee (₦)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pricing.employers.map((e) => (
+                  <tr key={e.employerId} className="border-t border-border/50">
+                    <td className="px-3 py-2.5">
+                      <p className="font-medium">{e.name}</p>
+                      <p className="font-mono text-[11px] text-muted-foreground">{e.rcNumber}</p>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {e.customFeePerPostingKobo === null ? (
+                        <span className="text-muted-foreground">Standard tiers</span>
+                      ) : (
+                        <span className="font-semibold">{fmtNaira(e.customFeePerPostingKobo)} (negotiated)</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          className="h-8 w-28"
+                          inputMode="decimal"
+                          placeholder="e.g. 7.50"
+                          aria-label={`New rate for ${e.name}`}
+                          value={rateEdits[String(e.employerId)] ?? ""}
+                          onChange={(ev) => setRateEdits((m) => ({ ...m, [String(e.employerId)]: ev.target.value }))}
+                        />
+                        <Button
+                          size="sm"
+                          disabled={busy || !(rateEdits[String(e.employerId)] ?? "").trim()}
+                          onClick={() => {
+                            const naira = Number((rateEdits[String(e.employerId)] ?? "").replace(/[₦,\s]/g, ""));
+                            if (!Number.isFinite(naira) || naira < 0) {
+                              toast.error("Enter the rate in naira, e.g. 7.50");
+                              return;
+                            }
+                            void run(async () => {
+                              const r = await setEmployerRate({
+                                employerId: e.employerId,
+                                feePerPostingKobo: Math.round(naira * 100),
+                              });
+                              setRateEdits((m) => ({ ...m, [String(e.employerId)]: "" }));
+                              return r;
+                            }, `Negotiated rate set for ${e.name}`);
+                          }}
+                        >
+                          Set rate
+                        </Button>
+                        {e.customFeePerPostingKobo !== null && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() =>
+                              void run(
+                                () => setEmployerRate({ employerId: e.employerId, feePerPostingKobo: null }),
+                                `${e.name} returned to standard tiers`,
+                              )
+                            }
+                          >
+                            Use standard tiers
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {/* ---------------- Employer assignments ---------------- */}

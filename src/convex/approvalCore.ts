@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { bootstrapAdminEmails } from "./environment";
 import type { Doc } from "./_generated/dataModel";
 import { audit } from "./employers";
 import { notify } from "./notifications";
@@ -19,7 +20,8 @@ export type PricingChangeKind =
   | "setTierActive"
   | "createPlan"
   | "updatePlan"
-  | "setPlanActive";
+  | "setPlanActive"
+  | "employerRate";
 
 const naira = (kobo: unknown) =>
   typeof kobo === "number" ? `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}` : "";
@@ -55,6 +57,12 @@ async function summarize(ctx: MutationCtx, kind: PricingChangeKind, a: Record<st
     case "updatePlan": {
       const pl = await ctx.db.get(a.planId as Doc<"subscriptionPlans">["_id"]);
       return `Update plan "${pl?.name ?? "?"}"${a.monthlyPriceKobo !== undefined ? `: price ${pl ? `${naira(pl.monthlyPriceKobo)} → ` : ""}${naira(a.monthlyPriceKobo)}/month` : ""}${a.name !== undefined ? `, name → "${a.name}"` : ""}`;
+    }
+    case "employerRate": {
+      const e = await ctx.db.get(a.employerId as Doc<"employers">["_id"]);
+      return a.feePerPostingKobo === null
+        ? `Return ${e?.name ?? "employer"} to standard tier pricing`
+        : `Negotiated rate for ${e?.name ?? "employer"}: ${naira(a.feePerPostingKobo)} per employee`;
     }
     case "setPlanActive": {
       const pl = await ctx.db.get(a.planId as Doc<"subscriptionPlans">["_id"]);
@@ -104,4 +112,23 @@ export async function proposePricingChange(
     link: "/admin",
   });
   return { pending: true as const, requestId, summary };
+}
+
+/**
+ * The platform owner is super admin. An account flagged superAdmin is; so is
+ * the founding operator (PENROUTE_BOOTSTRAP_ADMIN_EMAILS) on a deployment
+ * where no super admin has been recorded yet — the owner never has to "claim"
+ * a role to use their own platform. In mutations the flag is persisted.
+ */
+export async function isSuperAdmin(ctx: QueryCtx | MutationCtx, user: Doc<"users">): Promise<boolean> {
+  if (user.role !== "admin") return false;
+  if (user.superAdmin) return true;
+  if (!bootstrapAdminEmails().has((user.email ?? "").trim().toLowerCase())) return false;
+  const users = await ctx.db.query("users").take(10_000);
+  const anotherSuper = users.some((u) => u._id !== user._id && u.role === "admin" && u.superAdmin);
+  if (anotherSuper) return false;
+  if ("insert" in ctx.db) {
+    await (ctx as MutationCtx).db.patch(user._id, { superAdmin: true, pricingApprover: true });
+  }
+  return true;
 }

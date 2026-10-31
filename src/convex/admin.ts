@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
-import { proposePricingChange } from "./approvalCore";
+import { isSuperAdmin, proposePricingChange } from "./approvalCore";
 import { getCurrentUser } from "./users";
 import { internal } from "./_generated/api";
 import { audit } from "./employers";
@@ -213,7 +213,7 @@ export const adminUpdateFee = mutation({
       throw new ConvexError("Invalid fee amount");
     }
     // The super admin's change applies immediately; everyone else's needs approval.
-    if (user.superAdmin) return { applied: true as const, result: await apply_flatFee(ctx, { perEmployeeFeeKobo }, user) };
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_flatFee(ctx, { perEmployeeFeeKobo }, user) };
     return await proposePricingChange(ctx, user, "flatFee", { perEmployeeFeeKobo });
   },
 });

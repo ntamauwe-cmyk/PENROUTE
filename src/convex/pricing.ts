@@ -9,11 +9,11 @@
  * ============================================================================
  */
 import { ConvexError, v, type ObjectType } from "convex/values";
-import { proposePricingChange } from "./approvalCore";
+import { isSuperAdmin, proposePricingChange } from "./approvalCore";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { getCurrentUser } from "./users";
-import { audit } from "./employers";
+import { audit, getEmployerForUser } from "./employers";
 import {
   DEFAULT_PRICING_TIERS,
   DEFAULT_SUBSCRIPTION_PLANS,
@@ -94,6 +94,65 @@ export async function quoteForPostings(ctx: QueryCtx, postings: number) {
   const tiers = await loadEffectiveTiers(ctx);
   return computeProcessingFee(tiers, postings);
 }
+
+/** Quote for a specific employer: their negotiated rate, when one is set,
+ *  replaces the tier rate. */
+export async function quoteForEmployer(
+  ctx: QueryCtx,
+  employerId: Doc<"employers">["_id"] | null | undefined,
+  postings: number,
+) {
+  const base = await quoteForPostings(ctx, postings);
+  const employer = employerId ? await ctx.db.get(employerId) : null;
+  const custom = employer?.customFeePerPostingKobo;
+  if (custom === undefined || custom === null) return base;
+  const count = Math.max(0, Math.floor(postings));
+  return {
+    ...base,
+    feePerPostingKobo: custom,
+    processingFeeKobo: count * custom,
+    tier: { ...base.tier, code: "negotiated", label: `Negotiated rate (${employer!.name})` },
+  };
+}
+
+const employerRateArgs = {
+  employerId: v.id("employers"),
+  feePerPostingKobo: v.union(v.number(), v.null()), // null = back to the standard tiers
+};
+/** Applies an APPROVED employer-specific rate (or clears it). */
+export async function apply_employerRate(
+  ctx: MutationCtx,
+  { employerId, feePerPostingKobo }: ObjectType<typeof employerRateArgs>,
+  user: Pick<Doc<"users">, "email">,
+) {
+  const employer = await ctx.db.get(employerId);
+  if (!employer) throw new ConvexError("Employer not found");
+  if (feePerPostingKobo !== null && (!Number.isInteger(feePerPostingKobo) || feePerPostingKobo < 0 || feePerPostingKobo > 10_000_000)) {
+    throw new ConvexError("Invalid rate");
+  }
+  await ctx.db.patch(employerId, { customFeePerPostingKobo: feePerPostingKobo ?? undefined });
+  await audit(ctx, {
+    actor: user.email ?? "admin",
+    action: "employer_rate_changed",
+    entityType: "employer",
+    entityId: employerId,
+    employerId,
+    field: "customFeePerPostingKobo",
+    before: employer.customFeePerPostingKobo === undefined ? "standard tiers" : String(employer.customFeePerPostingKobo),
+    after: feePerPostingKobo === null ? "standard tiers" : String(feePerPostingKobo),
+    details: `${employer.name}: ${feePerPostingKobo === null ? "returned to standard tier pricing" : `negotiated rate ₦${(feePerPostingKobo / 100).toFixed(2)} per posting`}`,
+  });
+  return { ok: true };
+}
+/** Set or clear an employer's negotiated rate (super admin direct; others need approval). */
+export const setEmployerRate = mutation({
+  args: employerRateArgs,
+  handler: async (ctx, args) => {
+    const user = await requireAdmin(ctx);
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_employerRate(ctx, args, user) };
+    return await proposePricingChange(ctx, user, "employerRate", args);
+  },
+});
 
 export type ActivePlan = {
   code: string;
@@ -225,7 +284,8 @@ export const getQuote = query({
     const user = await getCurrentUser(ctx);
     if (!user) throw new ConvexError("Not authenticated");
     if (!Number.isFinite(postings) || postings < 0) throw new ConvexError("Invalid posting volume");
-    const quote = await quoteForPostings(ctx, Math.floor(postings));
+    const employer = user.role === "admin" ? null : await getEmployerForUser(ctx, user);
+    const quote = await quoteForEmployer(ctx, employer?._id, Math.floor(postings));
     return {
       postings: quote.postingCount,
       tierCode: quote.tier.code,
@@ -265,7 +325,12 @@ export const getPricingForAdmin = query({
         })),
       employers: employers
         .filter((e) => e.status !== "suspended")
-        .map((e) => ({ employerId: e._id, name: e.name, rcNumber: e.rcNumber })),
+        .map((e) => ({
+          employerId: e._id,
+          name: e.name,
+          rcNumber: e.rcNumber,
+          customFeePerPostingKobo: e.customFeePerPostingKobo ?? null,
+        })),
     };
   },
 });
@@ -376,7 +441,7 @@ export const createTier = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     // The super admin's changes apply immediately; everyone else's need approval.
-    if (user.superAdmin) return { applied: true as const, result: await apply_createTier(ctx, args, user) };
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_createTier(ctx, args, user) };
     return await proposePricingChange(ctx, user, "createTier", args);
   },
 });
@@ -473,7 +538,7 @@ export const updateTier = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     // The super admin's changes apply immediately; everyone else's need approval.
-    if (user.superAdmin) return { applied: true as const, result: await apply_updateTier(ctx, args, user) };
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_updateTier(ctx, args, user) };
     return await proposePricingChange(ctx, user, "updateTier", args);
   },
 });
@@ -521,7 +586,7 @@ export const setTierActive = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     // The super admin's changes apply immediately; everyone else's need approval.
-    if (user.superAdmin) return { applied: true as const, result: await apply_setTierActive(ctx, args, user) };
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_setTierActive(ctx, args, user) };
     return await proposePricingChange(ctx, user, "setTierActive", args);
   },
 });
@@ -574,7 +639,7 @@ export const createPlan = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     // The super admin's changes apply immediately; everyone else's need approval.
-    if (user.superAdmin) return { applied: true as const, result: await apply_createPlan(ctx, args, user) };
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_createPlan(ctx, args, user) };
     return await proposePricingChange(ctx, user, "createPlan", args);
   },
 });
@@ -627,7 +692,7 @@ export const updatePlan = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     // The super admin's changes apply immediately; everyone else's need approval.
-    if (user.superAdmin) return { applied: true as const, result: await apply_updatePlan(ctx, args, user) };
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_updatePlan(ctx, args, user) };
     return await proposePricingChange(ctx, user, "updatePlan", args);
   },
 });
@@ -662,7 +727,7 @@ export const setPlanActive = mutation({
   handler: async (ctx, args) => {
     const user = await requireAdmin(ctx);
     // The super admin's changes apply immediately; everyone else's need approval.
-    if (user.superAdmin) return { applied: true as const, result: await apply_setPlanActive(ctx, args, user) };
+    if (await isSuperAdmin(ctx, user)) return { applied: true as const, result: await apply_setPlanActive(ctx, args, user) };
     return await proposePricingChange(ctx, user, "setPlanActive", args);
   },
 });

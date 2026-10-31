@@ -76,6 +76,9 @@ const schema = defineSchema(
       // Legal acceptance recorded at registration (version of the published terms).
       termsAcceptedAt: v.optional(v.number()),
       employeeCount: v.optional(v.number()), // denormalised roster size
+      // Negotiated per-posting processing fee (kobo) for this employer; when
+      // set it replaces the tier rate on new charges.
+      customFeePerPostingKobo: v.optional(v.number()),
       salaryPayDay: v.optional(v.number()), // 1..31 — drives the remittance deadline
       lastDeadlineReminder: v.optional(v.string()), // "YYYY-MM:kind" — reminder idempotency
       termsVersion: v.optional(v.string()),
