@@ -14,6 +14,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { SettlementConfirmations } from "@/components/SettlementConfirmations";
 import { KybDocumentsReview } from "@/components/KybDocuments";
 import { PfaPicker } from "@/components/PfaPicker";
+import { AdminTeam, PricingApprovals } from "@/components/PricingApprovals";
 import {
   CheckCircle2,
   Database,
@@ -116,6 +117,10 @@ function AdminConsoleBody() {
   // null = no local edit yet — the input shows the LIVE rate from the
   // central pricing engine (what quotes and billing actually charge).
   const [fee, setFee] = useState<string | null>(null);
+  const [editingFee, setEditingFee] = useState(false);
+  const currentFeeKobo = overview?.effectiveFeePerEmployeeKobo ?? overview?.feePerEmployeeKobo;
+  const pricingRequests = useQuery(api.approvals.listPricingRequests);
+  const pendingFee = pricingRequests?.pending.find((r) => r.kind === "flatFee");
   const feeValue =
     fee ??
     (() => {
@@ -205,9 +210,11 @@ function AdminConsoleBody() {
     setBusy(true);
     try {
       await updateFee({ perEmployeeFeeKobo: n });
-      toast.success(
-        `Fee updated to ₦${(n / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} per employee — applied to every active pricing tier`,
-      );
+      toast.success("Fee change submitted for approval", {
+        description: `₦${(n / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} per employee takes effect once another administrator with fee-approval authority approves it.`,
+      });
+      setEditingFee(false);
+      setFee(null);
     } catch (e) {
       toast.error(friendlyError(e, "Update failed"));
     } finally {
@@ -347,6 +354,9 @@ function AdminConsoleBody() {
               </Button>
             </div>
           </section>
+
+          <PricingApprovals />
+          <AdminTeam />
 
           {/* Manual settlement confirmation (PFAs without live API integration) */}
           <SettlementConfirmations scope="admin" />
@@ -506,31 +516,68 @@ function AdminConsoleBody() {
           <section className="pen-card-lg p-6">
             <h2 className="font-bold tracking-tight">Fee management</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Per-employee contribution processing fee. Saving applies this rate to every active
-              pricing tier, so quotes, Billing, revenue reports and the public pricing page all
-              show the new price immediately. Pension funds and platform revenue stay separate in
-              the ledger regardless of pricing.
+              Per-employee contribution processing fee. A change is submitted for approval and
+              takes effect — on every active pricing tier, quotes, Billing and the public pricing
+              page — only after a different administrator with fee-approval authority approves it.
             </p>
-            <div className="mt-4 flex flex-wrap items-end gap-3">
-              <div className="w-40">
-                <Label htmlFor="fee-naira">Fee per employee (₦)</Label>
-                <div className="relative mt-1.5">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₦</span>
-                  <Input
-                    id="fee-naira"
-                    className="pl-7"
-                    value={feeValue}
-                    onChange={(e) => setFee(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="9.00"
-                  />
+            {!editingFee ? (
+              <div className="mt-4 flex flex-wrap items-center gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Current fee per employee
+                  </p>
+                  <p className="text-2xl font-bold tabular-nums">
+                    {currentFeeKobo === undefined ? "—" : fmtNaira(currentFeeKobo)}
+                  </p>
                 </div>
+                <Button
+                  variant="outline"
+                  className="font-semibold"
+                  disabled={Boolean(pendingFee)}
+                  onClick={() => {
+                    setFee(currentFeeKobo === undefined ? "" : String(currentFeeKobo / 100));
+                    setEditingFee(true);
+                  }}
+                >
+                  Change fee
+                </Button>
+                {pendingFee && (
+                  <p className="text-sm text-[#7A5A10]">
+                    A change is awaiting approval: {pendingFee.summary}
+                  </p>
+                )}
               </div>
-              <p className="pb-2 text-sm text-muted-foreground">per employee, per monthly contribution</p>
-              <Button className="font-semibold" onClick={saveFee} disabled={busy}>
-                Save fee
-              </Button>
-            </div>
+            ) : (
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <div className="w-40">
+                  <Label htmlFor="fee-naira">New fee per employee (₦)</Label>
+                  <div className="relative mt-1.5">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₦</span>
+                    <Input
+                      id="fee-naira"
+                      className="pl-7"
+                      autoFocus
+                      value={feeValue}
+                      onChange={(e) => setFee(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="9.00"
+                    />
+                  </div>
+                </div>
+                <Button className="font-semibold" onClick={saveFee} disabled={busy}>
+                  Submit for approval
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setEditingFee(false);
+                    setFee(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
           </section>
 
           {/* Employers */}
