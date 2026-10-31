@@ -117,7 +117,11 @@ function AdminConsoleBody() {
   // central pricing engine (what quotes and billing actually charge).
   const [fee, setFee] = useState<string | null>(null);
   const feeValue =
-    fee ?? String(overview?.effectiveFeePerEmployeeKobo ?? overview?.feePerEmployeeKobo ?? "");
+    fee ??
+    (() => {
+      const k = overview?.effectiveFeePerEmployeeKobo ?? overview?.feePerEmployeeKobo;
+      return k === undefined ? "" : String(k / 100);
+    })();
   const [rail, setRail] = useState<{ mode: string; configured: boolean } | null>(null);
   const [checkingRail, setCheckingRail] = useState(true); // status fetch starts on mount
   const [busy, setBusy] = useState(false);
@@ -192,16 +196,17 @@ function AdminConsoleBody() {
   };
 
   const saveFee = async () => {
-    const n = Number(feeValue);
-    if (!Number.isFinite(n) || n < 0) {
-      toast.error("Enter a valid fee in kobo (₦9 = 900)");
+    const naira = Number(feeValue.replace(/[₦,\s]/g, ""));
+    const n = Math.round(naira * 100); // naira → kobo (stored precisely)
+    if (!feeValue.trim() || !Number.isFinite(naira) || naira < 0 || naira > 100_000) {
+      toast.error("Enter the fee in naira, e.g. 9 or 9.50");
       return;
     }
     setBusy(true);
     try {
       await updateFee({ perEmployeeFeeKobo: n });
       toast.success(
-        `Fee updated to ₦${(n / 100).toFixed(0)} per employee — applied to every active pricing tier`,
+        `Fee updated to ₦${(n / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} per employee — applied to every active pricing tier`,
       );
     } catch (e) {
       toast.error(friendlyError(e, "Update failed"));
@@ -508,19 +513,20 @@ function AdminConsoleBody() {
             </p>
             <div className="mt-4 flex flex-wrap items-end gap-3">
               <div className="w-40">
-                <Label>Fee (kobo)</Label>
-                <Input
-                  className="mt-1.5"
-                  value={feeValue}
-                  onChange={(e) => setFee(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="900"
-                />
+                <Label htmlFor="fee-naira">Fee per employee (₦)</Label>
+                <div className="relative mt-1.5">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₦</span>
+                  <Input
+                    id="fee-naira"
+                    className="pl-7"
+                    value={feeValue}
+                    onChange={(e) => setFee(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="9.00"
+                  />
+                </div>
               </div>
-              <p className="pb-2 text-sm text-muted-foreground">
-                = ₦{Number.isFinite(Number(feeValue)) ? (Number(feeValue) / 100).toFixed(0) : "?"} per employee
-                credit
-              </p>
+              <p className="pb-2 text-sm text-muted-foreground">per employee, per monthly contribution</p>
               <Button className="font-semibold" onClick={saveFee} disabled={busy}>
                 Save fee
               </Button>
