@@ -177,7 +177,10 @@ export default function Overview() {
     : "Contribution payments are temporarily unavailable — the payment rail has not been enabled yet. Please contact Penroute support.";
 
   const stageIdx = latest ? cycleStageIndex(latest) : -1;
-  const firstName = employer?.name?.split(" ")[0] ?? "Employer";
+  // Greet the person (the authorised representative), not a fragment of the
+  // company name; fall back to the full company name.
+  const rep = employer?.representativeName?.trim();
+  const firstName = rep && rep !== "—" ? rep.split(/\s+/)[0] : (employer?.name ?? "there");
   const greeting = greetingNow();
 
   return (
