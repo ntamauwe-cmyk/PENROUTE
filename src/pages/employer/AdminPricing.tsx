@@ -22,6 +22,7 @@ import { CheckCircle2, Loader2, Plus, Receipt, Save, XCircle } from "lucide-reac
 import { toast } from "sonner";
 import { PricingApprovals } from "@/components/PricingApprovals";
 import { FeeManagement } from "@/components/FeeManagement";
+import { PaymentChargesManagement } from "@/components/PaymentChargesManagement";
 
 /**
  * ADMINISTRATOR-ONLY PRICING MANAGEMENT — processing-fee tiers, subscription
@@ -172,6 +173,7 @@ export default function AdminPricing() {
       />
 
       <FeeManagement />
+      <PaymentChargesManagement />
       <PricingApprovals />
 
       {/* ---------------- Active rate card ---------------- */}

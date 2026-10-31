@@ -34,6 +34,8 @@ const fmtDay = (iso: string) =>
     timeZone: "UTC",
   });
 import { LivePaymentPanel } from "@/components/LivePaymentPanel";
+import { PartnerPaymentPanel } from "@/components/PartnerPaymentPanel";
+import { describeCharge, processingChargeKobo, type PayMethod } from "@/lib/paymentCharges";
 
 interface Props {
   onDone: (batchId: Id<"contributionBatches">) => void;
@@ -248,6 +250,15 @@ export function ContributionWizard({ onDone }: Props) {
   // (admin-configured tiers) — never a hard-coded number.
   const feePerEmployeeN = (feeQuote?.feePerPostingKobo ?? 0) / 100;
   const feeN = totalRecords * feePerEmployeeN;
+  // How the money moves: direct (Penroute's Paystack) or an approved provider.
+  const route = useQuery(api.remittancePartner.getEmployerRoute);
+  const viaPartner = route?.route === "partner";
+  const charges = useQuery(api.paymentCharges.getPaymentCharges);
+  const [payMethod, setPayMethod] = useState<PayMethod>("bank");
+  const baseKobo = Math.round((pensionTotalN + (viaPartner ? 0 : feeN)) * 100);
+  const chargeFor = (m: PayMethod) => (charges && !viaPartner ? processingChargeKobo(baseKobo, m, charges) : 0);
+  const processingKobo = chargeFor(payMethod);
+  const totalPayableKobo = baseKobo + processingKobo;
 
   // Pre-payment checks against the statutory minimums and last month.
   const findings = useMemo(
@@ -293,7 +304,10 @@ export function ContributionWizard({ onDone }: Props) {
     batchId: Id<"contributionBatches">;
     amountKobo: number;
     payerEmail: string;
+    payMethod: PayMethod;
+    processingChargeKobo: number;
   } | null>(null);
+  const [partnerBatch, setPartnerBatch] = useState<Id<"contributionBatches"> | null>(null);
 
   const authorise = async () => {
     setPaying(true);
@@ -302,13 +316,21 @@ export function ContributionWizard({ onDone }: Props) {
       // and pay/process run against it instead of duplicating money movement.
       const res = await prepare({ year, month, records: prepared });
       const bId = res.batchId as Id<"contributionBatches">;
-      const payRes = await pay({ batchId: bId });
+      const payRes = await pay({ batchId: bId, method: payMethod });
+      if ("requiresPartner" in payRes && payRes.requiresPartner) {
+        // APPROVED-PROVIDER ROUTE: the employer pays on the provider's platform.
+        setPartnerBatch(bId);
+        setPaying(false);
+        return;
+      }
       if ("requiresCheckout" in payRes && payRes.requiresCheckout) {
         // LIVE RAIL: stop here — LivePaymentPanel takes over (init + verify + finalize)
         setCheckout({
           batchId: bId,
           amountKobo: payRes.amountKobo,
           payerEmail: payRes.payerEmail,
+          payMethod: (payRes.payMethod ?? "bank") as PayMethod,
+          processingChargeKobo: payRes.processingChargeKobo ?? 0,
         });
         setPaying(false);
         return;
@@ -333,12 +355,27 @@ export function ContributionWizard({ onDone }: Props) {
     }
   };
 
+  if (partnerBatch) {
+    return (
+      <PartnerPaymentPanel
+        batchId={partnerBatch}
+        onDone={() => {
+          setStep("done");
+          setFinishedBatchId(partnerBatch);
+          onDone(partnerBatch);
+        }}
+      />
+    );
+  }
+
   if (checkout) {
     return (
       <LivePaymentPanel
         batchId={checkout.batchId}
         amountKobo={checkout.amountKobo}
         payerEmail={checkout.payerEmail}
+        payMethod={checkout.payMethod}
+        processingChargeKobo={checkout.processingChargeKobo}
         onPaid={async () => {
           let dispatched = false;
           try {
@@ -724,16 +761,57 @@ export function ContributionWizard({ onDone }: Props) {
 
           {/* Payment summary + authorise */}
           <div className="mt-5 flex flex-col gap-4 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm">
-              <p className="font-semibold text-[#0B1F2A]">
-                Penroute processing fee: {fmtNaira(feeN * 100)}{" "}
-                <span className="font-normal text-[#5A6B74]">
-                  ({totalRecords} × ₦{feePerEmployeeN % 1 === 0 ? feePerEmployeeN : feePerEmployeeN.toFixed(2)}
-                  {feeQuote ? ` · ${feeQuote.tierLabel}` : ""})
-                </span>
-              </p>
+            <div className="space-y-2 text-sm">
+              {viaPartner ? (
+                <p className="max-w-md text-[#2A3B44]">
+                  Pension remittances go through PenCom-approved provider{" "}
+                  <strong>{route?.partner?.name}</strong>. You'll pay on their platform with the
+                  schedule Penroute prepares. Penroute's service fee ({fmtNaira(feeN * 100)}) is
+                  invoiced separately.
+                </p>
+              ) : (
+                <>
+                  <p className="font-semibold text-[#0B1F2A]">
+                    Penroute processing fee: {fmtNaira(feeN * 100)}{" "}
+                    <span className="font-normal text-[#5A6B74]">
+                      ({totalRecords} × ₦{feePerEmployeeN % 1 === 0 ? feePerEmployeeN : feePerEmployeeN.toFixed(2)}
+                      {feeQuote ? ` · ${feeQuote.tierLabel}` : ""})
+                    </span>
+                  </p>
+                  <fieldset className="flex flex-wrap gap-2" aria-label="Payment method">
+                    {(["bank", "card"] as PayMethod[]).map((m) => (
+                      <label
+                        key={m}
+                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 ${payMethod === m ? "border-[#007A4D] bg-[#E6F6EF]" : "border-[#E5E9EC]"}`}
+                      >
+                        <input
+                          type="radio"
+                          name="pay-method"
+                          className="accent-[#007A4D]"
+                          checked={payMethod === m}
+                          onChange={() => setPayMethod(m)}
+                        />
+                        <span>
+                          <span className="font-semibold">{m === "bank" ? "Bank transfer / USSD" : "Card"}</span>
+                          <span className="block text-xs text-[#5A6B74]">
+                            {charges ? (chargeFor(m) === 0 ? "No charge" : `+ ${fmtNaira(chargeFor(m))} (${describeCharge(charges, m)})`) : "…"}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                  {processingKobo > 0 && (
+                    <p className="text-[#2A3B44]">
+                      {payMethod === "card" ? "Card" : "Payment"} processing charge: {fmtNaira(processingKobo)}
+                      {payMethod === "card" && chargeFor("bank") < processingKobo && (
+                        <span className="text-[#5A6B74]"> · pay by bank transfer to save {fmtNaira(processingKobo - chargeFor("bank"))}</span>
+                      )}
+                    </p>
+                  )}
+                </>
+              )}
               <p className="text-lg font-bold tabular-nums text-[#0B1F2A]">
-                Total payable: {fmtNaira((pensionTotalN + feeN) * 100)}
+                {viaPartner ? "Pension to remit" : "Total payable"}: {fmtNaira(totalPayableKobo)}
               </p>
             </div>
             <Button

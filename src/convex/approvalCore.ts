@@ -21,7 +21,8 @@ export type PricingChangeKind =
   | "createPlan"
   | "updatePlan"
   | "setPlanActive"
-  | "employerRate";
+  | "employerRate"
+  | "paymentCharges";
 
 const naira = (kobo: unknown) =>
   typeof kobo === "number" ? `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}` : "";
@@ -63,6 +64,11 @@ async function summarize(ctx: MutationCtx, kind: PricingChangeKind, a: Record<st
       return a.feePerPostingKobo === null
         ? `Return ${e?.name ?? "employer"} to standard tier pricing`
         : `Negotiated rate for ${e?.name ?? "employer"}: ${naira(a.feePerPostingKobo)} per employee`;
+    }
+    case "paymentCharges": {
+      const pct = (bps: unknown) => `${(Number(bps) / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}%`;
+      if (!a.enabled) return "Turn OFF payment processing charges (Penroute absorbs gateway fees)";
+      return `Payment processing charges — card: ${pct(a.cardBps)} + ${naira(a.cardFlatKobo)}${Number(a.cardCapKobo) > 0 ? `, max ${naira(a.cardCapKobo)}` : ""}; bank transfer: ${pct(a.bankBps)} + ${naira(a.bankFlatKobo)}${Number(a.bankCapKobo) > 0 ? `, max ${naira(a.bankCapKobo)}` : ""}`;
     }
     case "setPlanActive": {
       const pl = await ctx.db.get(a.planId as Doc<"subscriptionPlans">["_id"]);

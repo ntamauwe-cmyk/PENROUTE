@@ -20,11 +20,15 @@ export function LivePaymentPanel({
   batchId,
   amountKobo,
   payerEmail,
+  payMethod = "bank",
+  processingChargeKobo = 0,
   onPaid,
 }: {
   batchId: Id<"contributionBatches">;
   amountKobo: number;
   payerEmail: string;
+  payMethod?: "bank" | "card";
+  processingChargeKobo?: number;
   onPaid: () => void;
 }) {
   const initialize = useAction(api.payments.initializeLivePayment);
@@ -101,8 +105,10 @@ export function LivePaymentPanel({
         <div>
           <p className="text-sm font-bold tracking-tight">Complete your payment</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {fmtNaira(expectedKobo)} · secured by Paystack · your contribution processes
-            automatically once the payment is verified.
+            {fmtNaira(expectedKobo)} by {payMethod === "card" ? "card" : "bank transfer / USSD"}
+            {processingChargeKobo > 0 ? ` (includes ${fmtNaira(processingChargeKobo)} processing charge)` : ""} ·
+            secured by Paystack · your contribution processes automatically once the payment is
+            verified.
           </p>
         </div>
         <StatusPill status="initiated" pulse />

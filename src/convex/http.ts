@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { auth } from "./auth";
 import { paystackWebhook } from "./paystackWebhook";
+import { partnerWebhook } from "./partnerWebhook";
 import { payrollScheduleIntake } from "./payrollApi";
 
 const http = httpRouter();
@@ -23,6 +24,14 @@ http.route({
   path: "/webhooks/paystack",
   method: "POST",
   handler: paystackWebhook,
+});
+
+// Approved remittance provider (PenCom PSSP) confirmation — HMAC-SHA256
+// signed with the webhook secret agreed with the provider (partnerWebhook.ts).
+http.route({
+  path: "/webhooks/remittance-partner",
+  method: "POST",
+  handler: partnerWebhook,
 });
 
 export default http;
